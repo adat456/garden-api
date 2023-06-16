@@ -26,5 +26,39 @@ router.post("/create-bed", async function(req, res, next) {
   };
 });
 
+router.get("/retrieve-bed/:bedId", async function(req, res, next) {
+  const bedId = Number(req.params.bedId);
+
+  try {
+    const req = await pool.query(`SELECT * FROM practice WHERE id = ${bedId}`);
+    res.status(200).json(req.rows);
+  } catch(err) {
+    res.status(404).json(err.message);
+  };
+});
+
+router.get("/search/:type/:term", async function(req, res, next) {
+  const searchType = req.params.type;
+  const spacedTerm = req.params.term.replace(/-/g, " ");
+  
+  try {
+    if (searchType === "live") {
+      const req = await pool.query(
+        "SELECT name FROM veg_data_eden WHERE name ~* ($1) ORDER BY name",
+        [spacedTerm]
+      );
+      res.status(200).json(req.rows);
+    } else if (searchType === "final") {
+      const req = await pool.query(
+        "SELECT * FROM veg_data_eden WHERE name ~* ($1) ORDER BY name",
+        [spacedTerm]
+      );
+      res.status(200).json(req.rows);
+    };
+  } catch(err) {
+    res.status(404).json(err.message);
+  };
+});
+
 
 module.exports = router;
