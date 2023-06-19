@@ -44,7 +44,7 @@ router.get("/search/:type/:term", async function(req, res, next) {
   try {
     if (searchType === "live") {
       const req = await pool.query(
-        "SELECT name FROM veg_data_eden WHERE name ~* ($1) ORDER BY name",
+        "SELECT * FROM veg_data_eden WHERE name ~* ($1) ORDER BY name",
         [spacedTerm]
       );
       res.status(200).json(req.rows);
@@ -55,6 +55,21 @@ router.get("/search/:type/:term", async function(req, res, next) {
       );
       res.status(200).json(req.rows);
     };
+  } catch(err) {
+    res.status(404).json(err.message);
+  };
+});
+
+router.post("/save-bed", async function(req, res, next) {
+  const { gridMap, bedId } = req.body;
+  const gridMapJSON = JSON.stringify(gridMap);
+
+  try {
+    const req = await pool.query(
+      "UPDATE practice SET gridmap = ($1) WHERE id = ($2)",
+      [gridMapJSON, bedId]
+    );
+    res.status(200).json("Bed updated.");
   } catch(err) {
     res.status(404).json(err.message);
   };
