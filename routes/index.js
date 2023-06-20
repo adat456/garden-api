@@ -17,7 +17,7 @@ router.post("/create-bed", async function(req, res, next) {
     
   try {
     const req = await pool.query(
-      "INSERT INTO practice (hardiness, sunlight, soil, length, width, gridMap) VALUES ($1, $2, $3, $4, $5, $6)",
+      "INSERT INTO garden_beds (hardiness, sunlight, soil, length, width, gridMap) VALUES ($1, $2, $3, $4, $5, $6)",
       [hardiness, sunlight, soil, length, width, gridMapJSON]
     );
     res.status(200).json("Bed data received!");
@@ -30,7 +30,7 @@ router.get("/retrieve-bed/:bedId", async function(req, res, next) {
   const bedId = Number(req.params.bedId);
 
   try {
-    const req = await pool.query(`SELECT * FROM practice WHERE id = ${bedId}`);
+    const req = await pool.query(`SELECT * FROM garden_beds WHERE id = ${bedId}`);
     res.status(200).json(req.rows);
   } catch(err) {
     res.status(404).json(err.message);
@@ -66,7 +66,7 @@ router.post("/save-bed", async function(req, res, next) {
 
   try {
     const req = await pool.query(
-      "UPDATE practice SET gridmap = ($1) WHERE id = ($2)",
+      "UPDATE garden_beds SET gridmap = ($1) WHERE id = ($2)",
       [gridMapJSON, bedId]
     );
     res.status(200).json("Bed updated.");
