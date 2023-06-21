@@ -22,16 +22,17 @@ router.post("/create-account", async function(req, res, next) {
     prop = prop.trim();
   };
   let { firstName, lastName, email, username, password } = req.body;
+  const boardIds = [];
   
   try {
     let responseString = "";
     const usernameReq = await pool.query(
-      "SELECT username FROM users WHERE username ~* ($1)",
+      "SELECT username FROM users WHERE username ILIKE ($1)",
       [username]
     );
     if (usernameReq.rowCount > 0) responseString += "This username has been taken.";
     const emailReq = await pool.query(
-      "SELECT email FROM users WHERE email ~* ($1)",
+      "SELECT email FROM users WHERE email ILIKE ($1)",
       [email]
     );
     if (emailReq.rowCount > 0) responseString += "This email address has been taken.";
@@ -44,8 +45,8 @@ router.post("/create-account", async function(req, res, next) {
       password = await bcrypt.hash(password, salt);
       // inserting into the DB
       await pool.query(
-        "INSERT INTO users (firstname, lastname, email, username, password) VALUES ($1, $2, $3, $4, $5)",
-        [ firstName, lastName, email, username, password ]
+        "INSERT INTO users (firstname, lastname, email, username, password, board_ids) VALUES ($1, $2, $3, $4, $5, $6)",
+        [ firstName, lastName, email, username, password, boardIds ]
       );
       // creating the token
       const token = await jwt.sign({ username }, process.env.JWT_KEY, { expiresIn: "86400s"});
@@ -65,7 +66,7 @@ router.post("/log-in", async function(req, res, next) {
 
   try {
     const usernameReq = await pool.query(
-      "SELECT password FROM users WHERE username ~* ($1)",
+      "SELECT password FROM users WHERE username ILIKE ($1)",
       [username]
     );
     if (usernameReq.rowCount = 0) {
