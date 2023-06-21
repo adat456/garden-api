@@ -64,33 +64,58 @@ router.get("/retrieve-bed/:bedId", authenticate, async function(req, res, next) 
   const bedId = Number(req.params.bedId);
 
   try {
-    const req = await pool.query(`SELECT * FROM garden_beds WHERE id = ${bedId}`);
-    res.status(200).json(req.rows);
+    // retrieve the user's array of board ids
+    const getUserBoardsReq = await pool.query(
+      "SELECT board_ids FROM users WHERE username = $1",
+      [res.locals.username]
+    );
+    if (getUserBoardsReq.rows[0].board_ids.includes(bedId)) {
+      const req = await pool.query(`SELECT * FROM garden_beds WHERE id = ${bedId}`);
+      res.status(200).json(req.rows);
+    } else {
+      throw new Error("Permission to access this plot has not been granted.");
+    };
   } catch(err) {
     res.status(404).json(err.message);
   };
 });
 
-router.get("/search/:type/:term", authenticate, async function(req, res, next) {
-  const searchType = req.params.type;
+router.get("/search/:term", authenticate, async function(req, res, next) {
   const spacedTerm = req.params.term.replace(/-/g, " ");
   
   try {
-    if (searchType === "live") {
       const req = await pool.query(
         "SELECT * FROM veg_data_eden WHERE name ~* ($1) ORDER BY name",
         [spacedTerm]
       );
       res.status(200).json(req.rows);
-    } else if (searchType === "final") {
-      const req = await pool.query(
-        "SELECT * FROM veg_data_eden WHERE name ~* ($1) ORDER BY name",
-        [spacedTerm]
-      );
-      res.status(200).json(req.rows);
-    };
   } catch(err) {
     res.status(404).json(err.message);
+  };
+});
+
+router.post("/update-seed-basket", authenticate, async function(req, res, next) {
+  let { seedBasket, bedId } = req.body;
+  seedBasket = JSON.stringify(seedBasket);
+
+  try {
+    // first retrieve the user's array of board ids
+    const getUserBoardsReq = await pool.query(
+      "SELECT board_ids FROM users WHERE username = $1",
+      [res.locals.username]
+    );
+    if (getUserBoardsReq.rows[0].board_ids.includes(bedId)) {
+      const req = await pool.query(
+        "UPDATE garden_beds SET seedbasket = ($1) WHERE id = ($2)",
+        [seedBasket, bedId]
+      );
+      res.status(200).json("Seed basket updated.");
+    } else {
+      console.log("Permission to edit this plot has not been granted.");
+    };
+  } catch(err) {
+    console.log(err);
+    res.status(400).json(err);
   };
 });
 
