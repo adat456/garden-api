@@ -80,15 +80,24 @@ router.get("/retrieve-bed/:bedId", authenticate, async function(req, res, next) 
   };
 });
 
-router.get("/search/:term", authenticate, async function(req, res, next) {
+router.get("/search/:include/:term", authenticate, async function(req, res, next) {
   const spacedTerm = req.params.term.replace(/-/g, " ");
+  let include = Boolean(req.params.include);
   
   try {
-      const req = await pool.query(
-        "SELECT * FROM veg_data_eden WHERE name ~* ($1) ORDER BY name",
+      const edenReq = await pool.query(
+        "SELECT * FROM veg_data_eden WHERE name ~* ($1)",
         [spacedTerm]
       );
-      res.status(200).json(req.rows);
+      const userAddedReq = await pool.query(
+        "SELECT * FROM veg_data_users WHERE name ~* ($1)",
+        [spacedTerm]
+      );
+      if (include) {
+        res.status(200).json([...edenReq.rows, ...userAddedReq.rows]);
+      } else {
+        res.status(200).json(edenReq.rows);
+      };
   } catch(err) {
     res.status(404).json(err.message);
   };
@@ -131,6 +140,39 @@ router.post("/save-bed", authenticate, async function(req, res, next) {
     res.status(200).json("Bed updated.");
   } catch(err) {
     res.status(404).json(err.message);
+  };
+});
+
+router.post("/save-veg-data", authenticate, async function(req, res, next) {
+  for (let prop in req.body) {
+    if (typeof prop === "string") prop = prop.trim();
+  };
+  const { name, description, hardiness, water, light, growthConditionsArr, lifecycle, plantingSzn, sowingMethodArr, depth, spacingArr, growthHabitArr, dtmArr, heightArr, fruitSize, privateData } = req.body;
+
+  try {
+     // create the new bed and retrive its id
+     const addNewVegReq = await pool.query(
+      "INSERT INTO veg_data_users (name, description, plantingseason, fruitsize, growthhabit, growconditions, sowingmethod, light, depth, heightin, spacingin, water, hardiness, daystomaturity, lifecycle, privatedata, contributor) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id",
+      [name, description, plantingSzn, fruitSize, growthHabitArr, growthConditionsArr, sowingMethodArr, light, depth, heightArr, spacingArr, water, hardiness, dtmArr, lifecycle, privateData, res.locals.username]
+    );
+    const newVegId = addNewVegReq.rows[0].id;
+    // retrieve the user's array of added veg IDs
+    const userAddedVegReq = await pool.query(
+      "SELECT added_veg_data FROM users WHERE username = $1",
+      [res.locals.username]
+    );
+    // add the new veg id...
+    const vegIds = [...userAddedVegReq.rows[0].added_veg_data, newVegId];
+    // and update the user's data with this updated board id array
+    const updatedUserAddedVegReq = await pool.query(
+      "UPDATE users SET added_veg_data = $1 WHERE username = $2",
+      [vegIds, res.locals.username]
+    );
+
+    res.status(200).json("Bed data received!");
+  } catch(err) {
+    console.log(err.message);
+    res.status(400).json(err);
   };
 });
 
