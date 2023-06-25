@@ -3,6 +3,7 @@ var router = express.Router();
 require("dotenv").config();
 const { Pool } = require("pg");
 const jwt = require("jsonwebtoken");
+const redis = require("redis");
 
 const pool = new Pool({
   user: process.env.PSQL_USER,
@@ -12,22 +13,61 @@ const pool = new Pool({
   host: "localhost",
 });
 
-function authenticate(req, res, next) {
+let redisClient = null;
+(async () => {
+  redisClient = redis.createClient();
+
+  redisClient.on("error", error => {
+    console.log(error);
+  });
+  redisClient.on("connect", () => {
+    console.log("Redis connected.");
+  });
+
+  await redisClient.connect();
+})();
+
+async function authenticate(req, res, next) {
   const token = req.cookies.jwt;
 
-  if (token) {
-    jwt.verify(token, process.env.JWT_KEY, (err, decodedToken) => {
-      if (err) {
-        res.status(400).json("JWT is invalid.");
+  try {
+    if (token) {
+      const onBlacklist = await redisClient.get(`blacklist_${token}`);
+      if (onBlacklist) {
+        res.locals.username = null;
+        throw new Error("JWT blacklisted.");
       } else {
-        res.locals.username = decodedToken.username;
-        next();
-      };   
-    });
-  } else {
-    res.status(400).json("No JWT found.")
+        const decodedToken = await jwt.verify(token, process.env.JWT_KEY);
+        if (decodedToken) {
+          res.locals.username = decodedToken.username;
+          next();
+        } else {
+          res.locals.username = null;
+          throw new Error("JWT is invalid.");
+        };
+      };
+    } else {
+      res.locals.username = null;
+      throw new Error("No JWT found.");
+    };
+  } catch(err) {
+    console.log(err.message);
+    res.status(400).json(err.message);
   };
 };
+
+router.get("/get-bedids", authenticate, async function(req, res, next) {
+  try {
+    const getUserBoardsReq = await pool.query(
+      "SELECT board_ids FROM users WHERE username = $1",
+      [res.locals.username]
+    );
+    res.status(200).json(getUserBoardsReq.rows[0].board_ids);
+  } catch(err) {
+    console.log(err.message);
+    res.status(400).json(err.message);
+  };
+});
 
 router.post("/create-bed", authenticate, async function(req, res, next) {
   const { hardiness, sunlight, soil, length, width, gridMap } = req.body;
@@ -71,7 +111,7 @@ router.get("/retrieve-bed/:bedId", authenticate, async function(req, res, next) 
     );
     if (getUserBoardsReq.rows[0].board_ids.includes(bedId)) {
       const req = await pool.query(`SELECT * FROM garden_beds WHERE id = ${bedId}`);
-      res.status(200).json(req.rows);
+      res.status(200).json(req.rows[0]);
     } else {
       throw new Error("Permission to access this plot has not been granted.");
     };
@@ -80,9 +120,8 @@ router.get("/retrieve-bed/:bedId", authenticate, async function(req, res, next) 
   };
 });
 
-router.get("/search/:include/:term", authenticate, async function(req, res, next) {
+router.get("/search/:term", authenticate, async function(req, res, next) {
   const spacedTerm = req.params.term.replace(/-/g, " ");
-  let include = Boolean(req.params.include);
   
   try {
       const edenReq = await pool.query(
@@ -90,22 +129,20 @@ router.get("/search/:include/:term", authenticate, async function(req, res, next
         [spacedTerm]
       );
       const userAddedReq = await pool.query(
-        "SELECT * FROM veg_data_users WHERE name ~* ($1)",
-        [spacedTerm]
+        "SELECT * FROM veg_data_users WHERE name ~* ($1)  AND privatedata = ($2)",
+        [spacedTerm, false]
       );
-      if (include) {
-        res.status(200).json([...edenReq.rows, ...userAddedReq.rows]);
-      } else {
-        res.status(200).json(edenReq.rows);
-      };
+      res.status(200).json([...edenReq.rows, ...userAddedReq.rows]);
   } catch(err) {
+    console.log(err.message);
     res.status(404).json(err.message);
   };
 });
 
 router.post("/update-seed-basket", authenticate, async function(req, res, next) {
-  let { seedBasket, bedId } = req.body;
+  let { seedBasket, bedid } = req.body;
   seedBasket = JSON.stringify(seedBasket);
+  bedid = Number(bedid);
 
   try {
     // first retrieve the user's array of board ids
@@ -113,18 +150,19 @@ router.post("/update-seed-basket", authenticate, async function(req, res, next) 
       "SELECT board_ids FROM users WHERE username = $1",
       [res.locals.username]
     );
-    if (getUserBoardsReq.rows[0].board_ids.includes(bedId)) {
+    console.log(getUserBoardsReq.rows[0].board_ids.includes(bedid));
+    if (getUserBoardsReq.rows[0].board_ids.includes(bedid)) {
       const req = await pool.query(
-        "UPDATE garden_beds SET seedbasket = ($1) WHERE id = ($2)",
-        [seedBasket, bedId]
+        "UPDATE garden_beds SET seedbasket = ($1) WHERE id = ($2) RETURNING seedbasket",
+        [seedBasket, bedid]
       );
-      res.status(200).json("Seed basket updated.");
+      res.status(200).json(req.rows[0]);
     } else {
       console.log("Permission to edit this plot has not been granted.");
     };
   } catch(err) {
-    console.log(err);
-    res.status(400).json(err);
+    console.log(err.message);
+    res.status(400).json(err.message);
   };
 });
 
@@ -172,7 +210,7 @@ router.post("/save-veg-data", authenticate, async function(req, res, next) {
     res.status(200).json("Bed data received!");
   } catch(err) {
     console.log(err.message);
-    res.status(400).json(err);
+    res.status(400).json(err.message);
   };
 });
 

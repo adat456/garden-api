@@ -4,6 +4,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 require("dotenv").config();
 const { Pool } = require("pg");
+const redis = require("redis");
 
 const pool = new Pool({
   user: process.env.PSQL_USER,
@@ -12,6 +13,20 @@ const pool = new Pool({
   port: process.env.PSQL_PORT,
   host: "localhost",
 });
+
+let redisClient = null;
+(async () => {
+  redisClient = redis.createClient();
+
+  redisClient.on("error", error => {
+    console.log(error);
+  });
+  redisClient.on("connect", () => {
+    console.log("Redis connected.");
+  });
+
+  await redisClient.connect();
+})();
 
 // USER: ID, first name, last name, email address, username, password, array of board IDs, array of added veg data
 // GRID: ID, gridmap, length, width, soil, sunlight, hardiness, seedbasket (plantPicksInterface, with the gridcolor)
@@ -55,6 +70,7 @@ router.post("/create-account", async function(req, res, next) {
       res.status(200).cookie("jwt", token, { maxAge: 86400000, httpOnly: true }).json("Account created.");
     };
   } catch(err) {
+    console.log(err);
     res.status(400).json(err);
   };
 });
@@ -84,8 +100,31 @@ router.post("/log-in", async function(req, res, next) {
       };
     };
   } catch(err) {
+    console.log(err);
     res.status(400).json(err);
   };
+});
+
+// logging out a user by storing current JWT on blacklist (client will redirect to log-in screen)
+router.get("/log-out", async function(req, res, next) {
+  const token = req.cookies.jwt;
+
+  try {
+    if (token) {
+      const { exp } = await jwt.verify(token, process.env.JWT_KEY);
+      // storing a key-value pair consisting of an arbitrary (but unique) key name and the actual JWT token
+      const key = `blacklist_${token}`;
+      await redisClient.set(key, token);
+      // specifying the expiry date of the key-value pair with the key name and the expiry date of the token itself
+      redisClient.expireAt(key, exp);
+      
+      res.status(200).json("Logged out. JWT added to blacklist.");
+    } else {
+      throw new Error("No JWT found.");
+    };
+  } catch(err) {
+    next(err);
+  };  
 });
 
 module.exports = router;
