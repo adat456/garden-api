@@ -56,6 +56,19 @@ async function authenticate(req, res, next) {
   };
 };
 
+router.get("/pull-user-data", authenticate, async function(req, res, next) {
+  try {
+    const getUserDataReq = await pool.query(
+      "SELECT id, firstname, lastname, email, username, board_ids, added_veg_data, favorited_beds FROM users WHERE username = ($1)",
+      [res.locals.username]
+    );
+    res.status(200).json(getUserDataReq.rows[0]);
+  } catch(err) {
+    console.log(err.message);
+    res.status(400).json(err.message);
+  };
+});
+
 router.get("/get-bedids", authenticate, async function(req, res, next) {
   try {
     const getUserBoardsReq = await pool.query(
@@ -70,14 +83,14 @@ router.get("/get-bedids", authenticate, async function(req, res, next) {
 });
 
 router.post("/create-bed", authenticate, async function(req, res, next) {
-  const { hardiness, sunlight, soil, length, width, gridMap } = req.body;
+  const { hardiness, sunlight, soil, length, width, gridMap, name, public, created } = req.body;
   const gridMapJSON = JSON.stringify(gridMap);
     
   try {
     // create the new bed and retrive its id
     const addNewBedReq = await pool.query(
-      "INSERT INTO garden_beds (hardiness, sunlight, soil, length, width, gridMap) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
-      [hardiness, sunlight, soil, length, width, gridMapJSON]
+      "INSERT INTO garden_beds (hardiness, sunlight, soil, length, width, gridMap, name, public, created, username, numhearts, numcopies) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id",
+      [hardiness, sunlight, soil, length, width, gridMapJSON, name, public, created, res.locals.username, 0, 0]
     );
     const newBoardId = addNewBedReq.rows[0].id;
     // retrieve the user's array of board ids
@@ -116,6 +129,7 @@ router.get("/retrieve-bed/:bedId", authenticate, async function(req, res, next) 
       throw new Error("Permission to access this plot has not been granted.");
     };
   } catch(err) {
+    console.log(err.message);
     res.status(404).json(err.message);
   };
 });
@@ -129,7 +143,7 @@ router.get("/search/:term", authenticate, async function(req, res, next) {
         [spacedTerm]
       );
       const userAddedReq = await pool.query(
-        "SELECT * FROM veg_data_users WHERE name ~* ($1)  AND privatedata = ($2)",
+        "SELECT * FROM veg_data_users WHERE name ~* ($1) AND privatedata = ($2)",
         [spacedTerm, false]
       );
       res.status(200).json([...edenReq.rows, ...userAddedReq.rows]);
@@ -213,6 +227,60 @@ router.post("/save-veg-data", authenticate, async function(req, res, next) {
     res.status(400).json(err.message);
   };
 });
+
+router.get("/all-public-beds", authenticate, async function(req, res, next) {
+  try {
+    const recentPublicBedsReq = await pool.query(
+      "SELECT * FROM garden_beds WHERE public = $1 AND username != $2",
+      [false, res.locals.username]
+    );
+    res.status(200).json(recentPublicBedsReq.rows);
+  } catch(err) {
+    console.log(err.message);
+    res.status(400).json(err.message);
+  };
+});
+
+router.post("/toggle-board-favorites", authenticate, async function(req, res, next) {
+  let { id } = req.body;
+  id = Number(id);
+
+  try {
+    // get array of favorited boards
+    const getUsersFavoritesReq = await pool.query(
+      "SELECT favorited_beds FROM users WHERE username = ($1)",
+      [res.locals.username]
+    );
+    let favoritedBeds = [...getUsersFavoritesReq.rows[0].favorited_beds];
+    
+    // if it does not include the current id, add it and increment numhearts in the respective board, otherwise...
+    if (favoritedBeds.includes(id)) {
+      favoritedBeds = favoritedBeds.filter(bed => bed != id);
+      const decrementNumHeartsReq = await pool.query(
+        "UPDATE garden_beds SET numhearts = numhearts - 1 WHERE id = ($1)",
+        [id]
+      );
+    } else {
+      favoritedBeds = [...favoritedBeds, id];
+      const incrementNumHeartsReq = await pool.query(
+        "UPDATE garden_beds SET numhearts = numhearts + 1 WHERE id = ($1)",
+        [id]
+      );
+    };
+
+    // update row in users with the updated favorited boards arr
+    const addToUserFavoritesReq = await pool.query(
+      "UPDATE users SET favorited_beds = ($1) WHERE username = ($2)",
+      [favoritedBeds, res.locals.username]
+    );
+
+    res.status(200).json("Toggled favorites.");
+  } catch(err) {
+    console.log(err.message);
+    res.status(400).json(err.message);
+  };
+});
+
 
 
 module.exports = router;

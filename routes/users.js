@@ -37,8 +37,6 @@ router.post("/create-account", async function(req, res, next) {
     prop = prop.trim();
   };
   let { firstName, lastName, email, username, password } = req.body;
-  const boardIds = [];
-  const addedVegDataIds = [];
   
   try {
     let responseString = "";
@@ -61,8 +59,8 @@ router.post("/create-account", async function(req, res, next) {
       password = await bcrypt.hash(password, salt);
       // inserting into the DB
       await pool.query(
-        "INSERT INTO users (firstname, lastname, email, username, password, board_ids, added_veg_data) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-        [ firstName, lastName, email, username, password, boardIds, addedVegDataIds ]
+        "INSERT INTO users (firstname, lastname, email, username, password, board_ids, added_veg_data, favorited_beds) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        [ firstName, lastName, email, username, password, [], [], [] ]
       );
       // creating the token
       const token = await jwt.sign({ username }, process.env.JWT_KEY, { expiresIn: "86400s"});
