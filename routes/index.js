@@ -56,10 +56,11 @@ async function authenticate(req, res, next) {
   };
 };
 
+// should return everything except for the password
 router.get("/pull-user-data", authenticate, async function(req, res, next) {
   try {
     const getUserDataReq = await pool.query(
-      "SELECT id, firstname, lastname, email, username, board_ids, added_veg_data, favorited_beds FROM users WHERE username = ($1)",
+      "SELECT id, firstname, lastname, email, username, board_ids, added_veg_data, favorited_beds, copied_beds FROM users WHERE username = ($1)",
       [res.locals.username]
     );
     res.status(200).json(getUserDataReq.rows[0]);
@@ -69,13 +70,13 @@ router.get("/pull-user-data", authenticate, async function(req, res, next) {
   };
 });
 
-router.get("/get-bedids", authenticate, async function(req, res, next) {
+router.get("/pull-beds-data", authenticate, async function(req, res, next) {
   try {
     const getUserBoardsReq = await pool.query(
-      "SELECT board_ids FROM users WHERE username = $1",
+      "SELECT * FROM garden_beds WHERE username = ($1)",
       [res.locals.username]
     );
-    res.status(200).json(getUserBoardsReq.rows[0].board_ids);
+    res.status(200).json(getUserBoardsReq.rows);
   } catch(err) {
     console.log(err.message);
     res.status(400).json(err.message);
@@ -83,16 +84,17 @@ router.get("/get-bedids", authenticate, async function(req, res, next) {
 });
 
 router.post("/create-bed", authenticate, async function(req, res, next) {
-  const { hardiness, sunlight, soil, length, width, gridMap, name, public, created } = req.body;
-  const gridMapJSON = JSON.stringify(gridMap);
+  const { hardiness, sunlight, soil, length, width, gridmap, name, public, created } = req.body;
+  const gridmapJSON = JSON.stringify(gridmap);
     
   try {
     // create the new bed and retrive its id
     const addNewBedReq = await pool.query(
-      "INSERT INTO garden_beds (hardiness, sunlight, soil, length, width, gridMap, name, public, created, username, numhearts, numcopies, seedbasket) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id",
-      [hardiness, sunlight, soil, length, width, gridMapJSON, name, public, created, res.locals.username, 0, 0, JSON.stringify([])]
+      "INSERT INTO garden_beds (hardiness, sunlight, soil, length, width, gridMap, name, public, created, username, numhearts, numcopies, seedbasket, members, roles) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *",
+      [hardiness, sunlight, soil, length, width, gridmapJSON, name, public, created, res.locals.username, 0, 0, JSON.stringify([]), JSON.stringify([]), JSON.stringify([])]
     );
-    const newBoardId = addNewBedReq.rows[0].id;
+    const newBoard = addNewBedReq.rows[0];
+    const newBoardId = newBoard.id;
     // retrieve the user's array of board ids
     const getUserBoardsReq = await pool.query(
       "SELECT board_ids FROM users WHERE username = $1",
@@ -106,28 +108,7 @@ router.post("/create-bed", authenticate, async function(req, res, next) {
       [boardIds, res.locals.username]
     );
 
-    res.status(200).json("Bed data received!");
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
-
-router.get("/retrieve-bed/:bedId", authenticate, async function(req, res, next) {
-  const bedId = Number(req.params.bedId);
-
-  try {
-    // retrieve the user's array of board ids
-    const getUserBoardsReq = await pool.query(
-      "SELECT board_ids FROM users WHERE username = $1",
-      [res.locals.username]
-    );
-    if (getUserBoardsReq.rows[0].board_ids.includes(bedId)) {
-      const req = await pool.query(`SELECT * FROM garden_beds WHERE id = ${bedId}`);
-      res.status(200).json(req.rows[0]);
-    } else {
-      throw new Error("Permission to access this plot has not been granted.");
-    };
+    res.status(200).json(newBoard);
   } catch(err) {
     console.log(err.message);
     res.status(404).json(err.message);
@@ -142,21 +123,26 @@ router.get("/search/:term", authenticate, async function(req, res, next) {
         "SELECT * FROM veg_data_eden WHERE name ~* ($1)",
         [spacedTerm]
       );
-      const userAddedReq = await pool.query(
+      const userAddedPublicReq = await pool.query(
         "SELECT * FROM veg_data_users WHERE name ~* ($1) AND privatedata = ($2)",
         [spacedTerm, false]
       );
-      res.status(200).json([...edenReq.rows, ...userAddedReq.rows]);
+      const userAddedPrivateReq = await pool.query(
+        "SELECT * FROM veg_data_users WHERE name ~* ($1) AND privatedata = ($2) AND contributor = ($3)",
+        [spacedTerm, true, res.locals.username]
+      );
+      res.status(200).json([...edenReq.rows, ...userAddedPublicReq.rows, ...userAddedPrivateReq.rows]);
   } catch(err) {
     console.log(err.message);
     res.status(404).json(err.message);
   };
 });
 
-router.post("/update-seed-basket", authenticate, async function(req, res, next) {
-  let { seedBasket, bedid } = req.body;
-  seedBasket = JSON.stringify(seedBasket);
+router.patch("/update-seed-basket/:bedid", authenticate, async function(req, res, next) {
+  let { bedid } = req.params;
   bedid = Number(bedid);
+  let seedbasket = req.body;
+  seedbasket = JSON.stringify(seedbasket);
 
   try {
     // first retrieve the user's array of board ids
@@ -164,34 +150,19 @@ router.post("/update-seed-basket", authenticate, async function(req, res, next) 
       "SELECT board_ids FROM users WHERE username = $1",
       [res.locals.username]
     );
-    console.log(getUserBoardsReq.rows[0].board_ids.includes(bedid));
     if (getUserBoardsReq.rows[0].board_ids.includes(bedid)) {
+      // opted not to return the updated seedbasket because the updateSeedBasket mutation invalidates the tags associated with the getBeds query, which will automatically refetch the updated beds data (and the seedbasket along with it)
       const req = await pool.query(
-        "UPDATE garden_beds SET seedbasket = ($1) WHERE id = ($2) RETURNING seedbasket",
-        [seedBasket, bedid]
+        "UPDATE garden_beds SET seedbasket = ($1) WHERE id = ($2)",
+        [seedbasket, bedid]
       );
-      res.status(200).json(req.rows[0]);
+      res.status(200).json("Seedbasket successfully updated.");
     } else {
-      console.log("Permission to edit this plot has not been granted.");
+      throw new Error("Permission to edit this plot has not been granted.");
     };
   } catch(err) {
     console.log(err.message);
     res.status(400).json(err.message);
-  };
-});
-
-router.post("/save-bed", authenticate, async function(req, res, next) {
-  const { gridMap, bedId } = req.body;
-  const gridMapJSON = JSON.stringify(gridMap);
-
-  try {
-    const req = await pool.query(
-      "UPDATE garden_beds SET gridmap = ($1) WHERE id = ($2)",
-      [gridMapJSON, bedId]
-    );
-    res.status(200).json("Bed updated.");
-  } catch(err) {
-    res.status(404).json(err.message);
   };
 });
 
@@ -204,10 +175,11 @@ router.post("/save-veg-data", authenticate, async function(req, res, next) {
   try {
      // create the new bed and retrive its id
      const addNewVegReq = await pool.query(
-      "INSERT INTO veg_data_users (name, description, plantingseason, fruitsize, growthhabit, growconditions, sowingmethod, light, depth, heightin, spacingin, water, hardiness, daystomaturity, lifecycle, privatedata, contributor) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id",
+      "INSERT INTO veg_data_users (name, description, plantingseason, fruitsize, growthhabit, growconditions, sowingmethod, light, depth, heightin, spacingin, water, hardiness, daystomaturity, lifecycle, privatedata, contributor) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *",
       [name, description, plantingSzn, fruitSize, growthHabitArr, growthConditionsArr, sowingMethodArr, light, depth, heightArr, spacingArr, water, hardiness, dtmArr, lifecycle, privateData, res.locals.username]
     );
-    const newVegId = addNewVegReq.rows[0].id;
+    const newVegData = addNewVegReq.rows[0];
+    const newVegId = newVegData.id;
     // retrieve the user's array of added veg IDs
     const userAddedVegReq = await pool.query(
       "SELECT added_veg_data FROM users WHERE username = $1",
@@ -221,7 +193,7 @@ router.post("/save-veg-data", authenticate, async function(req, res, next) {
       [vegIds, res.locals.username]
     );
 
-    res.status(200).json("Bed data received!");
+    res.status(200).json(newVegData);
   } catch(err) {
     console.log(err.message);
     res.status(400).json(err.message);
@@ -283,12 +255,12 @@ router.post("/toggle-bed-favorites", authenticate, async function(req, res, next
 
 router.post("/copy-bed", authenticate, async function(req, res, next) {
   const { bed, created } = req.body;
-  const { hardiness, sunlight, soil, length, width, gridmap, name, seedbasket } = bed;
+  const { hardiness, sunlight, soil, length, width, gridmap, name, seedbasket, id } = bed;
   const gridmapJSON = JSON.stringify(gridmap);
   const seedbasketJSON = JSON.stringify(seedbasket);
 
   try {
-    // create the new bed and retrive its id
+    // create the new bed and retrieve its id
     const addNewBedReq = await pool.query(
       "INSERT INTO garden_beds (hardiness, sunlight, soil, length, width, gridMap, name, public, created, username, numhearts, numcopies, seedbasket) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id",
       [hardiness, sunlight, soil, length, width, gridmapJSON, `Copy of ${name}`, false, created, res.locals.username, 0, 0, seedbasketJSON]
@@ -296,14 +268,24 @@ router.post("/copy-bed", authenticate, async function(req, res, next) {
     const newBoardId = addNewBedReq.rows[0].id;
     // retrieve the user's array of board ids and add the new board ID
     const getUserBoardsReq = await pool.query(
-      "SELECT board_ids FROM users WHERE username = $1",
+      "SELECT board_ids, copied_beds FROM users WHERE username = $1",
       [res.locals.username]
     );
+    // update with the returned, freshly generated id
     const boardIds = [...getUserBoardsReq.rows[0].board_ids, newBoardId];
+    // update with the old/original id of the bed that was copied (for comparison purposes when looking at boards you've already copied)
+    const copiedBedIds = [...getUserBoardsReq.rows[0].copied_beds, id];
     // and update the user's data with this updated board id array
     const updatedUserBoardsReq = await pool.query(
-      "UPDATE users SET board_ids = $1 WHERE username = $2",
-      [boardIds, res.locals.username]
+      "UPDATE users SET board_ids = ($1), copied_beds = ($2) WHERE username = ($3)",
+      [boardIds, copiedBedIds, res.locals.username]
+    );
+
+
+    // also increment number of copies in the copied board
+    const incrementNumCopiesReq = await pool.query(
+      "UPDATE garden_beds SET numcopies = numcopies + 1 WHERE id = ($1)",
+      [id]
     );
 
     res.status(200).json("Bed data copied!");
@@ -313,6 +295,71 @@ router.post("/copy-bed", authenticate, async function(req, res, next) {
   };
 });
 
+router.get("/find-users/:searchTerm", authenticate, async function(req, res, next) {
+  const { searchTerm } = req.params;
 
+  try {
+    const findUsersReq = await pool.query(
+      "SELECT id, username, firstname, lastname FROM users WHERE username ~* ($1)",
+      [searchTerm]
+    );
+    res.status(200).json(findUsersReq.rows);
+  } catch(err) {
+    console.log(err.message);
+    res.status(400).json(err.message);
+  };
+});
+
+router.post("/save-bed/gridmap", authenticate, async function(req, res, next) {
+  const { gridmap, bedid } = req.body;
+  const gridmapJSON = JSON.stringify(gridmap);
+
+  try {
+    const req = await pool.query(
+      "UPDATE garden_beds SET gridmap = ($1) WHERE id = ($2) RETURNING *",
+      [gridmapJSON, bedid]
+    );
+    res.status(200).json(req.rows[0]);
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.patch("/update-roles/:bedid", authenticate, async function(req, res, next) {
+  let { bedid } = req.params;
+  bedid = Number(bedid); 
+  const roles = req.body;
+  const rolesJSON = JSON.stringify(roles);
+
+  try {
+    const updateRolesReq = await pool.query(
+      "UPDATE garden_beds SET roles = ($1) WHERE id = ($2)",
+      [rolesJSON, bedid]
+    );
+    res.status(200).json("Bed roles updated.");
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.patch("/update-members/:bedid", authenticate, async function(req, res, next) {
+  let { bedid } = req.params;
+  bedid = Number(bedid); 
+  const members = req.body;
+  const membersJSON = JSON.stringify(members);
+
+  try {
+    const updateMembersReq = await pool.query(
+      "UPDATE garden_beds SET members = ($1) WHERE id = ($2)",
+      [membersJSON, bedid]
+    );
+    res.status(200).json("Members updated.");
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+})
 
 module.exports = router;
