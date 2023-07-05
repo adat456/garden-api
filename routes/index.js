@@ -261,6 +261,7 @@ router.post("/copy-bed", authenticate, async function(req, res, next) {
 
   try {
     // create the new bed and retrieve its id
+    // need to add the extra columns
     const addNewBedReq = await pool.query(
       "INSERT INTO garden_beds (hardiness, sunlight, soil, length, width, gridMap, name, public, created, username, numhearts, numcopies, seedbasket) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id",
       [hardiness, sunlight, soil, length, width, gridmapJSON, `Copy of ${name}`, false, created, res.locals.username, 0, 0, seedbasketJSON]
@@ -310,16 +311,20 @@ router.get("/find-users/:searchTerm", authenticate, async function(req, res, nex
   };
 });
 
-router.post("/save-bed/gridmap", authenticate, async function(req, res, next) {
-  const { gridmap, bedid } = req.body;
+// ///// BED PATCH/UPDATE REQUESTS /////////////////
+
+router.patch("/update-gridmap/:bedid", authenticate, async function(req, res, next) {
+  let { bedid } = req.params;
+  bedid = Number(bedid); 
+  const gridmap = req.body;
   const gridmapJSON = JSON.stringify(gridmap);
 
   try {
     const req = await pool.query(
-      "UPDATE garden_beds SET gridmap = ($1) WHERE id = ($2) RETURNING *",
+      "UPDATE garden_beds SET gridmap = ($1) WHERE id = ($2)",
       [gridmapJSON, bedid]
     );
-    res.status(200).json(req.rows[0]);
+    res.status(200).json("Gridmap successfully updated.");
   } catch(err) {
     console.log(err.message);
     res.status(404).json(err.message);
@@ -356,6 +361,21 @@ router.patch("/update-members/:bedid", authenticate, async function(req, res, ne
       [membersJSON, bedid]
     );
     res.status(200).json("Members updated.");
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.post("/add-notification", authenticate, async function(req, res, next) {
+  const { senderid, sendername, recipientid, message, dispatched, type } = req.body;
+
+  try {
+    const addNotificationReq = await pool.query(
+      "INSERT INTO notifications (senderid, sendername, recipientid, message, dispatched, type) VALUES ($1, $2, $3, $4, $5, $6)",
+      [senderid, sendername, recipientid, message, dispatched, type]
+    );
+    res.status(200).json("Notification successfully added.");
   } catch(err) {
     console.log(err.message);
     res.status(404).json(err.message);
