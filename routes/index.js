@@ -386,7 +386,7 @@ router.get("/pull-notifications", authenticate, async function(req, res, next) {
       "SELECT * FROM notifications WHERE recipientid = ($1)",
       [res.locals.user.id]
     );
-    res.status(200).json(notificationsReq.rows[0]);
+    res.status(200).json(notificationsReq.rows);
   } catch(err) {
     console.log(err.message);
     res.status(404).json(err.message);
@@ -395,7 +395,6 @@ router.get("/pull-notifications", authenticate, async function(req, res, next) {
 
 router.post("/add-notification", authenticate, async function(req, res, next) {
   const { senderid, sendername, senderusername, recipientid, message, dispatched, acknowledged, type } = req.body;
-  console.log()
 
   try {
     const addNotificationReq = await pool.query(
@@ -403,6 +402,39 @@ router.post("/add-notification", authenticate, async function(req, res, next) {
       [senderid, sendername, senderusername, recipientid, message, dispatched, acknowledged, type]
     );
     res.status(200).json("Notification successfully added.");
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.patch("/update-notification/:notifid", authenticate, async function(req, res, next) {
+  let { notifid } = req.params;
+  notifid = Number(notifid);
+  const { acknowledged } = req.body;
+  
+  try {
+    const req = await pool.query(
+      "UPDATE notifications SET acknowledged = ($1) WHERE id = ($2)",
+      [acknowledged, notifid]
+    );
+    res.status(200).json("Notification successfully updated.")
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.delete("/delete-notification/:notifid", authenticate, async function(req, res, next) {
+  let { notifid } = req.params;
+  notifid = Number(notifid);
+  
+  try {
+    const req = await pool.query(
+      "DELETE FROM notifications WHERE id = ($1)",
+      [notifid]
+    );
+    res.status(200).json("Notification successfully deleted.")
   } catch(err) {
     console.log(err.message);
     res.status(404).json(err.message);
