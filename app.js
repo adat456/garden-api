@@ -5,10 +5,23 @@ var cookieParser = require('cookie-parser');
 var logger = require('morgan');
 const cors = require("cors");
 
+const socketIo = require("socket.io");
+const http = require("http");
+
 var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users');
 
 var app = express();
+
+const server = http.createServer(app).listen(4000);
+const io = socketIo(server, {
+  cors: {
+    origin: "http://localhost:5173",
+  }
+});
+io.on("connection", (socket) => {
+  console.log(socket.id);
+});
 
 app.use(cors({credentials: true, origin: true}));
 app.use(logger('dev'));

@@ -1,6 +1,7 @@
 var express = require('express');
 var router = express.Router();
 require("dotenv").config();
+
 const { Pool } = require("pg");
 const jwt = require("jsonwebtoken");
 const redis = require("redis");
@@ -40,6 +41,14 @@ async function authenticate(req, res, next) {
         const decodedToken = await jwt.verify(token, process.env.JWT_KEY);
         if (decodedToken) {
           res.locals.username = decodedToken.username;
+
+          const pullUserReq = await pool.query(
+            "SELECT * FROM users WHERE username = ($1)",
+            [res.locals.username]
+          );
+          
+          res.locals.user = pullUserReq.rows[0];
+
           next();
         } else {
           res.locals.username = null;
@@ -367,13 +376,31 @@ router.patch("/update-members/:bedid", authenticate, async function(req, res, ne
   };
 });
 
+
+//////// NOTIFICATIONS ////////////////////
+
+router.get("/pull-notifications", authenticate, async function(req, res, next) {
+  console.log(res.locals.user.id);
+  try {
+    const notificationsReq = await pool.query(
+      "SELECT * FROM notifications WHERE recipientid = ($1)",
+      [res.locals.user.id]
+    );
+    res.status(200).json(notificationsReq.rows[0]);
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
 router.post("/add-notification", authenticate, async function(req, res, next) {
-  const { senderid, sendername, recipientid, message, dispatched, type } = req.body;
+  const { senderid, sendername, senderusername, recipientid, message, dispatched, acknowledged, type } = req.body;
+  console.log()
 
   try {
     const addNotificationReq = await pool.query(
-      "INSERT INTO notifications (senderid, sendername, recipientid, message, dispatched, type) VALUES ($1, $2, $3, $4, $5, $6)",
-      [senderid, sendername, recipientid, message, dispatched, type]
+      "INSERT INTO notifications (senderid, sendername, senderusername, recipientid, message, dispatched, acknowledged, type) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+      [senderid, sendername, senderusername, recipientid, message, dispatched, acknowledged, type]
     );
     res.status(200).json("Notification successfully added.");
   } catch(err) {
