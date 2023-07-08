@@ -4,7 +4,6 @@ var path = require('path');
 var cookieParser = require('cookie-parser');
 var logger = require('morgan');
 const cors = require("cors");
-
 const socketIo = require("socket.io");
 const http = require("http");
 
@@ -12,7 +11,6 @@ var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users');
 
 var app = express();
-
 const server = http.createServer(app).listen(4000);
 const io = socketIo(server, {
   cors: {
@@ -20,7 +18,13 @@ const io = socketIo(server, {
   }
 });
 io.on("connection", (socket) => {
-  console.log(socket.id);
+  console.log(`${socket.id} connected`);
+  socket.on("hello", (arg) => console.log(arg));
+});
+// app.set("io", io);
+app.use(function(req, res, next) {
+  req.io = io;
+  next();
 });
 
 app.use(cors({credentials: true, origin: true}));

@@ -380,7 +380,6 @@ router.patch("/update-members/:bedid", authenticate, async function(req, res, ne
 //////// NOTIFICATIONS ////////////////////
 
 router.get("/pull-notifications", authenticate, async function(req, res, next) {
-  console.log(res.locals.user.id);
   try {
     const notificationsReq = await pool.query(
       "SELECT * FROM notifications WHERE recipientid = ($1)",
@@ -401,6 +400,10 @@ router.post("/add-notification", authenticate, async function(req, res, next) {
       "INSERT INTO notifications (senderid, sendername, senderusername, recipientid, message, dispatched, acknowledged, type) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
       [senderid, sendername, senderusername, recipientid, message, dispatched, acknowledged, type]
     );
+
+    // const io = req.app.get("io");
+    req.io.emit(`notifications-${recipientid}`, "New notification");
+
     res.status(200).json("Notification successfully added.");
   } catch(err) {
     console.log(err.message);
@@ -435,6 +438,40 @@ router.delete("/delete-notification/:notifid", authenticate, async function(req,
       [notifid]
     );
     res.status(200).json("Notification successfully deleted.")
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.get("/pull-events/:bedid", authenticate, async function(req, res, next) {
+  let { bedid } = req.params;
+  bedid = Number(bedid);
+
+  try {
+    const req = await pool.query(
+      "SELECT * FROM events WHERE bedid = ($1)",
+      [bedid]
+    );
+    res.status(200).json(req.rows);
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.post("/add-event/:bedid", authenticate, async function(req, res, next) {
+  let { bedid } = req.params;
+  bedid = Number(bedid);
+  let { creatorId, creatorUsername, creatorName, eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventDate, eventStartTime, eventEndTime, repeating, repeatEvery, repeatTill } = req.body;
+  eventParticipants = JSON.stringify(eventParticipants);
+
+  try {
+    const req = await pool.query(
+      "INSERT INTO events (bedid, creatorid, creatorname, creatorusername, eventname, eventdesc, eventlocation, eventpublic, eventparticipants, eventstarttime, eventendtime, eventdate, repeating, repeatevery, repeattill) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)",
+      [bedid, creatorId, creatorName, creatorUsername, eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventStartTime, eventEndTime, eventDate, repeating, repeatEvery, repeatTill]
+    );
+    res.status(200).json("Event successfully added.");
   } catch(err) {
     console.log(err.message);
     res.status(404).json(err.message);
