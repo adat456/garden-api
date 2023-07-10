@@ -463,19 +463,72 @@ router.get("/pull-events/:bedid", authenticate, async function(req, res, next) {
 router.post("/add-event/:bedid", authenticate, async function(req, res, next) {
   let { bedid } = req.params;
   bedid = Number(bedid);
-  let { creatorId, creatorUsername, creatorName, eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventDate, eventStartTime, eventEndTime, repeating, repeatEvery, repeatTill } = req.body;
+  let { creatorId, creatorUsername, creatorName, eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventDate, eventStartTime, eventEndTime, repeating, repeatEvery, repeatTill, repeatId } = req.body;
   eventParticipants = JSON.stringify(eventParticipants);
 
   try {
     const req = await pool.query(
-      "INSERT INTO events (bedid, creatorid, creatorname, creatorusername, eventname, eventdesc, eventlocation, eventpublic, eventparticipants, eventstarttime, eventendtime, eventdate, repeating, repeatevery, repeattill) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)",
-      [bedid, creatorId, creatorName, creatorUsername, eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventStartTime, eventEndTime, eventDate, repeating, repeatEvery, repeatTill]
+      "INSERT INTO events (bedid, creatorid, creatorname, creatorusername, eventname, eventdesc, eventlocation, eventpublic, eventparticipants, eventstarttime, eventendtime, eventdate, repeating, repeatevery, repeattill, repeatid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)",
+      [bedid, creatorId, creatorName, creatorUsername, eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventStartTime, eventEndTime, eventDate, repeating, repeatEvery, repeatTill, repeatId]
     );
     res.status(200).json("Event successfully added.");
   } catch(err) {
     console.log(err.message);
     res.status(404).json(err.message);
   };
-})
+});
+
+router.patch("/update-event/:eventid/:repeatid", authenticate, async function(req, res, next) {
+  let { eventid, repeatid } = req.params;
+  eventid = Number(eventid);
+  // repeatid will either be "undefined" (comes in as a string on account of it being a param) or a "string", so if repeatid is not "undefined" then delete all counterparts
+
+  let { eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventDate, eventStartTime, eventEndTime, repeating, repeatEvery, repeatTill } = req.body;
+  eventParticipants = JSON.stringify(eventParticipants);
+
+  try {
+    if (repeatid !== "undefined") {
+      const req = await pool.query(
+        "UPDATE events SET eventname = ($1), eventdesc = ($2), eventlocation = ($3), eventpublic = ($4), eventparticipants = ($5), eventstarttime = ($6), eventendtime = ($7), eventdate = ($8), repeating = ($9), repeatevery = ($10), repeattill = ($11) WHERE repeatid = ($12)",
+        [eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventStartTime, eventEndTime, eventDate, repeating, repeatEvery, repeatTill, repeatid]
+      );
+      res.status(200).json("Event successfully updated.");
+    } else {
+      const req = await pool.query(
+        "UPDATE events SET eventname = ($1), eventdesc = ($2), eventlocation = ($3), eventpublic = ($4), eventparticipants = ($5), eventstarttime = ($6), eventendtime = ($7), eventdate = ($8), repeating = ($9), repeatevery = ($10), repeattill = ($11) WHERE id = ($12)",
+        [eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventStartTime, eventEndTime, eventDate, repeating, repeatEvery, repeatTill, eventid]
+      );
+      res.status(200).json("Event successfully updated.");
+    };
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.delete("/delete-event/:eventid/:repeatid", authenticate, async function(req, res, next) {
+  let { eventid, repeatid } = req.params;
+  eventid = Number(eventid);
+  // repeatid will either be "undefined" (comes in as a string on account of it being a param) or a "string", so if repeatid is not "undefined" then delete all counterparts
+
+  try {
+    if (repeatid !== "undefined") {
+      const req = await pool.query(
+        "DELETE FROM events WHERE repeatid = ($1)",
+        [repeatid]
+      );
+      res.status(200).json("Repeating events successfully deleted.");
+    } else {
+      const req = await pool.query(
+        "DELETE FROM events WHERE id = ($1)",
+        [eventid]
+      );
+      res.status(200).json("Event successfully deleted.");
+    };
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
 
 module.exports = router;
