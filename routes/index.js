@@ -393,16 +393,40 @@ router.get("/pull-notifications", authenticate, async function(req, res, next) {
 });
 
 router.post("/add-notification", authenticate, async function(req, res, next) {
-  const { senderid, sendername, senderusername, recipientid, message, dispatched, acknowledged, type } = req.body;
+  let { senderid, sendername, senderusername, recipientid, message, dispatched, acknowledged, type, bedid, eventid } = req.body;                     
 
   try {
     const addNotificationReq = await pool.query(
-      "INSERT INTO notifications (senderid, sendername, senderusername, recipientid, message, dispatched, acknowledged, type) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-      [senderid, sendername, senderusername, recipientid, message, dispatched, acknowledged, type]
+      "INSERT INTO notifications (senderid, sendername, senderusername, recipientid, message, dispatched, acknowledged, type, bedid, eventid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+      [senderid, sendername, senderusername, recipientid, message, dispatched, acknowledged, type, bedid, eventid]
     );
 
     // const io = req.app.get("io");
     req.io.emit(`notifications-${recipientid}`, "New notification");
+
+    if (type === "acceptance" && bedid) {
+      console.log(bedid);
+      const bedMembersReq = await pool.query(
+        "SELECT members FROM garden_beds WHERE id = ($1)",
+        [bedid]
+      );
+        console.log(bedMembersReq);
+      let members = bedMembersReq.rows[0].members;
+      members = members.map(member => {
+        if (member.id !== senderid) {
+          return member;
+        } else {
+          const date = new Date().toString();
+          return {...member, status: "final", finaldate: date};
+        };
+      });
+      members = JSON.stringify(members);
+
+      const updateBedMembersReq = await pool.query(
+        "UPDATE garden_beds SET members = ($1) WHERE id = ($2)",
+        [members, bedid]
+      );
+    };
 
     res.status(200).json("Notification successfully added.");
   } catch(err) {
@@ -478,28 +502,19 @@ router.post("/add-event/:bedid", authenticate, async function(req, res, next) {
   };
 });
 
-router.patch("/update-event/:eventid/:repeatid", authenticate, async function(req, res, next) {
-  let { eventid, repeatid } = req.params;
+router.patch("/update-event/:eventid", authenticate, async function(req, res, next) {
+  let { eventid } = req.params;
   eventid = Number(eventid);
-  // repeatid will either be "undefined" (comes in as a string on account of it being a param) or a "string", so if repeatid is not "undefined" then delete all counterparts
 
   let { eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventDate, eventStartTime, eventEndTime, repeating, repeatEvery, repeatTill } = req.body;
   eventParticipants = JSON.stringify(eventParticipants);
 
   try {
-    if (repeatid !== "undefined") {
-      const req = await pool.query(
-        "UPDATE events SET eventname = ($1), eventdesc = ($2), eventlocation = ($3), eventpublic = ($4), eventparticipants = ($5), eventstarttime = ($6), eventendtime = ($7), eventdate = ($8), repeating = ($9), repeatevery = ($10), repeattill = ($11) WHERE repeatid = ($12)",
-        [eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventStartTime, eventEndTime, eventDate, repeating, repeatEvery, repeatTill, repeatid]
-      );
-      res.status(200).json("Event successfully updated.");
-    } else {
-      const req = await pool.query(
-        "UPDATE events SET eventname = ($1), eventdesc = ($2), eventlocation = ($3), eventpublic = ($4), eventparticipants = ($5), eventstarttime = ($6), eventendtime = ($7), eventdate = ($8), repeating = ($9), repeatevery = ($10), repeattill = ($11) WHERE id = ($12)",
-        [eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventStartTime, eventEndTime, eventDate, repeating, repeatEvery, repeatTill, eventid]
-      );
-      res.status(200).json("Event successfully updated.");
-    };
+    const req = await pool.query(
+      "UPDATE events SET eventname = ($1), eventdesc = ($2), eventlocation = ($3), eventpublic = ($4), eventparticipants = ($5), eventstarttime = ($6), eventendtime = ($7), eventdate = ($8), repeating = ($9), repeatevery = ($10), repeattill = ($11) WHERE id = ($12)",
+      [eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventStartTime, eventEndTime, eventDate, repeating, repeatEvery, repeatTill, eventid]
+    );
+    res.status(200).json("Event successfully updated.");
   } catch(err) {
     console.log(err.message);
     res.status(404).json(err.message);
