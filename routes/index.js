@@ -85,7 +85,15 @@ router.get("/pull-beds-data", authenticate, async function(req, res, next) {
       "SELECT * FROM garden_beds WHERE username = ($1)",
       [res.locals.username]
     );
-    res.status(200).json(getUserBoardsReq.rows);
+    const getMemberBoardsReq = await pool.query(
+      "SELECT * FROM garden_beds WHERE members::JSONB @> ($1)",
+      // "SELECT * FROM garden_beds WHERE members::JSONB @> '[{ ($1) : ($2) }]'",
+      // [JSON.stringify("username"), JSON.stringify(res.locals.username)]
+      // above code didn't work, nor when "username" was placed directly as the first argument instead of passing it in as a parameter... would get error message "invalid input syntax for type json"
+      [JSON.stringify([{ "username": res.locals.username }])]
+    );
+    console.log(getMemberBoardsReq.rows);
+    res.status(200).json([...getUserBoardsReq.rows, ...getMemberBoardsReq.rows]);
   } catch(err) {
     console.log(err.message);
     res.status(400).json(err.message);
@@ -405,12 +413,10 @@ router.post("/add-notification", authenticate, async function(req, res, next) {
     req.io.emit(`notifications-${recipientid}`, "New notification");
 
     if (type === "acceptance" && bedid) {
-      console.log(bedid);
       const bedMembersReq = await pool.query(
         "SELECT members FROM garden_beds WHERE id = ($1)",
         [bedid]
       );
-        console.log(bedMembersReq);
       let members = bedMembersReq.rows[0].members;
       members = members.map(member => {
         if (member.id !== senderid) {
@@ -496,25 +502,6 @@ router.post("/add-event/:bedid", authenticate, async function(req, res, next) {
       [bedid, creatorId, creatorName, creatorUsername, eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventStartTime, eventEndTime, eventDate, repeating, repeatEvery, repeatTill, repeatId]
     );
     res.status(200).json("Event successfully added.");
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
-
-router.patch("/update-event/:eventid", authenticate, async function(req, res, next) {
-  let { eventid } = req.params;
-  eventid = Number(eventid);
-
-  let { eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventDate, eventStartTime, eventEndTime, repeating, repeatEvery, repeatTill } = req.body;
-  eventParticipants = JSON.stringify(eventParticipants);
-
-  try {
-    const req = await pool.query(
-      "UPDATE events SET eventname = ($1), eventdesc = ($2), eventlocation = ($3), eventpublic = ($4), eventparticipants = ($5), eventstarttime = ($6), eventendtime = ($7), eventdate = ($8), repeating = ($9), repeatevery = ($10), repeattill = ($11) WHERE id = ($12)",
-      [eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventStartTime, eventEndTime, eventDate, repeating, repeatEvery, repeatTill, eventid]
-    );
-    res.status(200).json("Event successfully updated.");
   } catch(err) {
     console.log(err.message);
     res.status(404).json(err.message);
