@@ -232,7 +232,8 @@ router.get("/pull-seed-contributions", authenticate, async function(req, res, ne
   };
 });
 
-router.post("/save-veg-data", authenticate, async function(req, res, next) {
+router.post("/save-veg-data/:returning", authenticate, async function(req, res, next) {
+  const { returning } = req.params;
   for (let prop in req.body) {
     if (typeof prop === "string") prop = prop.trim();
   };
@@ -244,12 +245,18 @@ router.post("/save-veg-data", authenticate, async function(req, res, next) {
       [name, description, plantingSzn, fruitSize, growthHabitArr, growthConditionsArr, sowingMethodArr, light, depth, heightArr, spacingArr, water, hardiness, dtmArr, lifecycle, privateData, res.locals.username]
     );
 
-    const pullAllVeg = await pool.query(
-      "SELECT * FROM veg_data_users WHERE contributor = ($1)",
-      [res.locals.username]
-    );
+    if (returning === "single") {
+      res.status(200).json(addNewVegReq.rows[0]);
+    };
 
-    res.status(200).json(pullAllVeg.rows);
+    if (returning === "all") {
+      const pullAllVeg = await pool.query(
+        "SELECT * FROM veg_data_users WHERE contributor = ($1)",
+        [res.locals.username]
+      );
+      res.status(200).json(pullAllVeg.rows);
+    }
+    
   } catch(err) {
     console.log(err.message);
     res.status(400).json(err.message);
@@ -652,6 +659,103 @@ router.patch("/delete-tag/:bedid", authenticate, async function(req, res, next) 
   };
 });
 
+router.get("/pull-posts/:bedid", authenticate, async function(req, res, next) {
+  let { bedid } = req.params;
+  bedid = Number(bedid);
 
+  try {
+    const pullPosts = await pool.query(
+      "SELECT * FROM posts WHERE bedid = ($1)",
+      [bedid]
+    );
+    res.status(200).json(pullPosts.rows);
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.post("/add-post/:bedid", authenticate, async function (req, res, next) {
+  let { bedid } = req.params;
+  bedid = Number(bedid);
+  let { title, content, id } = req.body;
+  title = title.trim();
+  content = content.trim();
+  const posted = new Date().toISOString().slice(0, 10);
+
+  try {
+    const addPost = await pool.query(
+      "INSERT INTO posts (bedid, authorid, authorname, authorusername, posted, edited, title, content, likes, dislikes, pinned, id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+      [bedid, res.locals.user.id, `${res.locals.user.firstname} ${res.locals.user.lastname}`, res.locals.username, posted, null, title, content, [], [], false, id]
+    );
+    res.status(200).json("Successfully added a post.");
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.post("/add-comment/:postid", authenticate, async function(req, res, next) {
+  const { postid } = req.params;
+  let { id, content } = req.body;
+  content = content.trim();
+  const posted = new Date().toISOString().slice(0, 10);
+  console.log(postid, id, content);
+
+  try {
+    const pullAllCommentsToThisPostReq = await pool.query(
+      "SELECT COUNT(*) FROM comments WHERE postid = ($1)",
+      [postid]
+    );
+    const numCommentsToThisPost = Number(pullAllCommentsToThisPostReq.rows[0].count);
+
+    // responseorder is 0-indexed
+    const addCommentReq = await pool.query(
+      "INSERT INTO comments (id, postid, responseorder, authorid, authorname, authorusername, posted, edited, content, likes, dislikes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+      [id, postid, numCommentsToThisPost, res.locals.user.id, `${res.locals.user.firstname} ${res.locals.user.lastname}`, res.locals.username, posted, null, content, [], []]
+    )
+    res.status(200).json("Added comment.");
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.patch("/update-reactions/:table/:id", authenticate, async function(req, res, next) {
+  const { table, id } = req.params;
+  const { likes, dislikes } = req.body;
+  try {
+    if (likes) {
+      if (table === "posts") {
+        const updateLikesReq = await pool.query(
+          "UPDATE posts SET likes = ($1) WHERE id = ($2)",
+          [likes, id]
+        );
+      } else if (table === "comments") {
+        const updateLikesReq = await pool.query(
+          "UPDATE comments SET likes = ($1) WHERE id = ($2)",
+          [likes, id]
+        );
+      };
+    };
+    if (dislikes) {
+      if (table === "posts") {
+        const updateDislikesReq = await pool.query(
+          "UPDATE posts SET dislikes = ($1) WHERE id = ($2)",
+          [dislikes, id]
+        );
+      } else if (table === "comments") {
+        const updateDislikesReq = await pool.query(
+          "UPDATE comments SET dislikes = ($1) WHERE id = ($2)",
+          [dislikes, id]
+        );
+      }; 
+    };
+    res.status(200).json("Reactions successfully updated");
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
 
 module.exports = router;
