@@ -101,31 +101,67 @@ router.get("/pull-beds-data", authenticate, async function(req, res, next) {
 });
 
 router.post("/create-bed", authenticate, async function(req, res, next) {
-  const { hardiness, sunlight, soil, length, width, gridmap, name, public, created } = req.body;
+  const { hardiness, sunlight, soil, whole, length, width, gridmap, name, public, created } = req.body;
   const gridmapJSON = JSON.stringify(gridmap);
     
   try {
     // create the new bed and retrive its id
     const addNewBedReq = await pool.query(
-      "INSERT INTO garden_beds (hardiness, sunlight, soil, length, width, gridMap, name, public, created, username, numhearts, numcopies, seedbasket, members, roles, eventtags) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING *",
-      [hardiness, sunlight, soil, length, width, gridmapJSON, name, public, created, res.locals.username, 0, 0, JSON.stringify([]), JSON.stringify([]), JSON.stringify([]), []]
+      "INSERT INTO garden_beds (hardiness, sunlight, soil, whole, length, width, gridMap, name, public, created, username, numhearts, numcopies, seedbasket, members, roles, eventtags) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *",
+      [hardiness, sunlight, soil, whole, length, width, gridmapJSON, name, public, created, res.locals.username, 0, 0, JSON.stringify([]), JSON.stringify([]), JSON.stringify([]), []]
     );
     const newBoard = addNewBedReq.rows[0];
-    const newBoardId = newBoard.id;
-    // retrieve the user's array of board ids
-    const getUserBoardsReq = await pool.query(
-      "SELECT board_ids FROM users WHERE username = $1",
-      [res.locals.username]
-    );
-    // add the new board id...
-    const boardIds = [...getUserBoardsReq.rows[0].board_ids, newBoardId];
-    // and update the user's data with this updated board id array
-    const updatedUserBoardsReq = await pool.query(
-      "UPDATE users SET board_ids = $1 WHERE username = $2",
-      [boardIds, res.locals.username]
-    );
+
+    // may not be necessary to add the bedid to the user table, as the user's username is already included in the bed tabl
+    // const newBoardId = newBoard.id;
+    // // retrieve the user's array of board ids
+    // const getUserBoardsReq = await pool.query(
+    //   "SELECT board_ids FROM users WHERE username = $1",
+    //   [res.locals.username]
+    // );
+    // // add the new board id...
+    // const boardIds = [...getUserBoardsReq.rows[0].board_ids, newBoardId];
+    // // and update the user's data with this updated board id array
+    // const updatedUserBoardsReq = await pool.query(
+    //   "UPDATE users SET board_ids = $1 WHERE username = $2",
+    //   [boardIds, res.locals.username]
+    // );
 
     res.status(200).json(newBoard);
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.patch("/update-bed/:bedid", authenticate, async function(req, res, next) {
+  let { bedid } = req.params;
+  bedid = Number(bedid);
+  const { hardiness, sunlight, soil, whole, length, width, gridmap, name, public } = req.body;
+  const gridmapJSON = JSON.stringify(gridmap);
+    
+  try {
+    const updateBedReq = await pool.query(
+      "UPDATE garden_beds SET hardiness = ($1), sunlight = ($2), soil = ($3), whole = ($4), length = ($5), width = ($6), gridmap = ($7), name = ($8), public = ($9) WHERE id = ($10)",
+      [hardiness, sunlight, soil, whole, length, width, gridmapJSON, name, public, bedid]
+    );
+    res.status(200).json("Successfully updated bed.");
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.delete("/delete-bed/:bedid", authenticate, async function(req, res, next) {
+  let { bedid } = req.params;
+  bedid = Number(bedid);
+
+  try {
+    const deleteReq = await pool.query(
+      "DELETE FROM garden_beds WHERE id = ($1)",
+      [bedid]
+    );
+    res.status(200).json("Bed successfully deleted.");
   } catch(err) {
     console.log(err.message);
     res.status(404).json(err.message);
@@ -162,24 +198,37 @@ router.patch("/update-seed-basket/:bedid", authenticate, async function(req, res
   seedbasket = JSON.stringify(seedbasket);
 
   try {
-    // first retrieve the user's array of board ids
-    const getUserBoardsReq = await pool.query(
-      "SELECT board_ids FROM users WHERE username = $1",
-      [res.locals.username]
-    );
-    if (getUserBoardsReq.rows[0].board_ids.includes(bedid)) {
+    // // first retrieve the user's array of board ids
+    // const getUserBoardsReq = await pool.query(
+    //   "SELECT board_ids FROM users WHERE username = $1",
+    //   [res.locals.username]
+    // );
+    // if (getUserBoardsReq.rows[0].board_ids.includes(bedid)) {
       // opted not to return the updated seedbasket because the updateSeedBasket mutation invalidates the tags associated with the getBeds query, which will automatically refetch the updated beds data (and the seedbasket along with it)
       const req = await pool.query(
         "UPDATE garden_beds SET seedbasket = ($1) WHERE id = ($2)",
         [seedbasket, bedid]
       );
       res.status(200).json("Seedbasket successfully updated.");
-    } else {
-      throw new Error("Permission to edit this plot has not been granted.");
-    };
+    // } else {
+    //   throw new Error("Permission to edit this plot has not been granted.");
+    // };
   } catch(err) {
     console.log(err.message);
     res.status(400).json(err.message);
+  };
+});
+
+router.get("/pull-seed-contributions", authenticate, async function(req, res, next) {
+  try {
+    const pullSeedContributionsReq = await pool.query(
+      "SELECT * FROM veg_data_users WHERE contributor = ($1)",
+      [res.locals.username]
+    );
+    res.status(200).json(pullSeedContributionsReq.rows);
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
   };
 });
 
@@ -190,27 +239,43 @@ router.post("/save-veg-data", authenticate, async function(req, res, next) {
   const { name, description, hardiness, water, light, growthConditionsArr, lifecycle, plantingSzn, sowingMethodArr, depth, spacingArr, growthHabitArr, dtmArr, heightArr, fruitSize, privateData } = req.body;
 
   try {
-     // create the new bed and retrive its id
      const addNewVegReq = await pool.query(
       "INSERT INTO veg_data_users (name, description, plantingseason, fruitsize, growthhabit, growconditions, sowingmethod, light, depth, heightin, spacingin, water, hardiness, daystomaturity, lifecycle, privatedata, contributor) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *",
       [name, description, plantingSzn, fruitSize, growthHabitArr, growthConditionsArr, sowingMethodArr, light, depth, heightArr, spacingArr, water, hardiness, dtmArr, lifecycle, privateData, res.locals.username]
     );
-    const newVegData = addNewVegReq.rows[0];
-    const newVegId = newVegData.id;
-    // retrieve the user's array of added veg IDs
-    const userAddedVegReq = await pool.query(
-      "SELECT added_veg_data FROM users WHERE username = $1",
+
+    const pullAllVeg = await pool.query(
+      "SELECT * FROM veg_data_users WHERE contributor = ($1)",
       [res.locals.username]
     );
-    // add the new veg id...
-    const vegIds = [...userAddedVegReq.rows[0].added_veg_data, newVegId];
-    // and update the user's data with this updated board id array
-    const updatedUserAddedVegReq = await pool.query(
-      "UPDATE users SET added_veg_data = $1 WHERE username = $2",
-      [vegIds, res.locals.username]
+
+    res.status(200).json(pullAllVeg.rows);
+  } catch(err) {
+    console.log(err.message);
+    res.status(400).json(err.message);
+  };
+});
+
+router.patch("/update-veg-data/:vegid", authenticate, async function(req, res, next) {
+  let { vegid } = req.params;
+  vegid = Number(vegid);
+  for (let prop in req.body) {
+    if (typeof prop === "string") prop = prop.trim();
+  };
+  const { name, description, hardiness, water, light, growthConditionsArr, lifecycle, plantingSzn, sowingMethodArr, depth, spacingArr, growthHabitArr, dtmArr, heightArr, fruitSize, privateData } = req.body;
+
+  try {
+     const updateVegReq = await pool.query(
+      "UPDATE veg_data_users SET name = ($1), description = ($2), plantingseason = ($3), fruitsize = ($4), growthhabit = ($5), growconditions = ($6), sowingmethod = ($7), light = ($8), depth = ($9), heightin = ($10), spacingin = ($11), water = ($12), hardiness = ($13), daystomaturity = ($14), lifecycle = ($15), privatedata = ($16) WHERE id = ($17)",
+      [name, description, plantingSzn, fruitSize, growthHabitArr, growthConditionsArr, sowingMethodArr, light, depth, heightArr, spacingArr, water, hardiness, dtmArr, lifecycle, privateData, vegid]
     );
 
-    res.status(200).json(newVegData);
+    const pullAllVeg = await pool.query(
+      "SELECT * FROM veg_data_users WHERE contributor = ($1)",
+      [res.locals.username]
+    );
+
+    res.status(200).json(pullAllVeg.rows);
   } catch(err) {
     console.log(err.message);
     res.status(400).json(err.message);
@@ -586,5 +651,7 @@ router.patch("/delete-tag/:bedid", authenticate, async function(req, res, next) 
     res.status(404).json(err.message);
   };
 });
+
+
 
 module.exports = router;
