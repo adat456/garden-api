@@ -92,7 +92,6 @@ router.get("/pull-beds-data", authenticate, async function(req, res, next) {
       // above code didn't work, nor when "username" was placed directly as the first argument instead of passing it in as a parameter... would get error message "invalid input syntax for type json"
       [JSON.stringify([{ "username": res.locals.username }])]
     );
-    console.log(getMemberBoardsReq.rows);
     res.status(200).json([...getUserBoardsReq.rows, ...getMemberBoardsReq.rows]);
   } catch(err) {
     console.log(err.message);
@@ -565,13 +564,13 @@ router.get("/pull-events/:bedid", authenticate, async function(req, res, next) {
 router.post("/add-event/:bedid", authenticate, async function(req, res, next) {
   let { bedid } = req.params;
   bedid = Number(bedid);
-  let { creatorId, creatorUsername, creatorName, eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventDate, eventStartTime, eventEndTime, repeating, repeatEvery, repeatTill, repeatId, tags } = req.body;
+  let { creatorId, creatorUsername, creatorName, eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventDate, eventStartTime, eventEndTime, repeating, repeatEvery, repeatTill, repeatId, tags, rsvpNeeded, rsvpDate } = req.body;
   eventParticipants = JSON.stringify(eventParticipants);
 
   try {
     const req = await pool.query(
-      "INSERT INTO events (bedid, creatorid, creatorname, creatorusername, eventname, eventdesc, eventlocation, eventpublic, eventparticipants, eventstarttime, eventendtime, eventdate, repeating, repeatevery, repeattill, repeatid, tags) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)",
-      [bedid, creatorId, creatorName, creatorUsername, eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventStartTime, eventEndTime, eventDate, repeating, repeatEvery, repeatTill, repeatId, tags]
+      "INSERT INTO events (bedid, creatorid, creatorname, creatorusername, eventname, eventdesc, eventlocation, eventpublic, eventparticipants, eventstarttime, eventendtime, eventdate, repeating, repeatevery, repeattill, repeatid, tags, rsvpneeded, rsvpdate, rsvpsreceived) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)",
+      [bedid, creatorId, creatorName, creatorUsername, eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventStartTime, eventEndTime, eventDate, repeating, repeatEvery, repeatTill, repeatId, tags, rsvpNeeded, rsvpDate, []]
     );
 
     const pullBedTagsReq = await pool.query(
@@ -695,32 +694,6 @@ router.post("/add-post/:bedid", authenticate, async function (req, res, next) {
   };
 });
 
-router.post("/add-comment/:postid", authenticate, async function(req, res, next) {
-  const { postid } = req.params;
-  let { id, content } = req.body;
-  content = content.trim();
-  const posted = new Date().toISOString().slice(0, 10);
-  console.log(postid, id, content);
-
-  try {
-    const pullAllCommentsToThisPostReq = await pool.query(
-      "SELECT COUNT(*) FROM comments WHERE postid = ($1)",
-      [postid]
-    );
-    const numCommentsToThisPost = Number(pullAllCommentsToThisPostReq.rows[0].count);
-
-    // responseorder is 0-indexed
-    const addCommentReq = await pool.query(
-      "INSERT INTO comments (id, postid, responseorder, authorid, authorname, authorusername, posted, edited, content, likes, dislikes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
-      [id, postid, numCommentsToThisPost, res.locals.user.id, `${res.locals.user.firstname} ${res.locals.user.lastname}`, res.locals.username, posted, null, content, [], []]
-    )
-    res.status(200).json("Added comment.");
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
-
 router.patch("/update-reactions/:table/:id", authenticate, async function(req, res, next) {
   const { table, id } = req.params;
   const { likes, dislikes } = req.body;
@@ -757,5 +730,118 @@ router.patch("/update-reactions/:table/:id", authenticate, async function(req, r
     res.status(404).json(err.message);
   };
 });
+
+router.get("/pull-comments/:id", authenticate, async function(req, res, next) {
+  const { id } = req.params;
+
+  async function pullComments(id, level, arr) {
+    try {
+      const pullCommentsReq = await pool.query(
+        "SELECT * FROM comments WHERE postid = ($1)",
+        [id]
+      );
+      if (pullCommentsReq.rowCount === 0) return;
+      if (pullCommentsReq.rowCount > 0) {
+        for (const comment of pullCommentsReq.rows) {
+          comment.level = level;
+          if (level === 0) {
+              arr.push(comment);
+          } else {
+              const parentIndex = arr.findIndex(parentComment => parentComment.id === comment.postid);
+              arr.splice(parentIndex + 1, 0, comment);
+          };
+
+          await pullComments(comment.id, level + 1, arr);
+        };
+      } else {
+        throw new Error(res);
+      };
+    } catch(err) {
+        console.error("Unable to pull comments: ", err.message);
+    };
+  };
+
+  try {
+    let finalCommentTree = [];
+    let level = 0;
+    await pullComments(id, level, finalCommentTree);
+    
+    res.status(200).json(finalCommentTree);
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.post("/add-comment/:postid", authenticate, async function(req, res, next) {
+  const { postid } = req.params;
+  let { id, content } = req.body;
+  content = content.trim();
+  const posted = new Date().toISOString().slice(0, 10);
+
+  try {
+    const addCommentReq = await pool.query(
+      "INSERT INTO comments (id, postid, authorid, authorname, authorusername, posted, edited, content, likes, dislikes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+      [id, postid, res.locals.user.id, `${res.locals.user.firstname} ${res.locals.user.lastname}`, res.locals.username, posted, null, content, [], []]
+    )
+    res.status(200).json("Added comment.");
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.patch("/update-comment/:id", authenticate, async function(req, res, next) {
+  const { id } = req.params;
+  let { content } = req.body;
+  content = content.trim();
+  const edited = new Date().toISOString().slice(0, 10);
+
+  try {
+    const getCommentReq = await pool.query(
+      "SELECT * FROM comments WHERE id = ($1)",
+      [id]
+    );
+    const commentAuthorUsername = getCommentRew.rows[0].authorusername;
+    if (commentAuthorUsername === res.locals.username) {
+      const updateCommentReq = await pool.query(
+        "UPDATE comments SET content = ($1), edited = ($2) WHERE id = ($3)",
+        [content, edited, id]
+      );
+      res.status(200).json("Comment successfully updated.");
+    } else {
+      throw new Error("You do not have permission to edit this comment as you are not the original author.");
+    };
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.delete("/delete-comment/:id", authenticate, async function(req, res, next) {
+  const { id } = req.params;
+
+  try {
+    const getCommentReq = await pool.query(
+      "SELECT * FROM comments WHERE id = ($1)",
+      [id]
+    );
+    const commentAuthorUsername = getCommentRew.rows[0].authorusername;
+    if (commentAuthorUsername === res.locals.username) {
+      const deleteCommentReq = await pool.query(
+        "DELETE FROM comments WHERE id = ($1)",
+        [id]
+      );
+      res.status(200).json("Comment successfully deleted.");
+    } else {
+      throw new Error("You do not have permission to delete this comment as you are not the original author.");
+    };
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+
 
 module.exports = router;
