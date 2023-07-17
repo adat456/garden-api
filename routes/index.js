@@ -694,6 +694,58 @@ router.post("/add-post/:bedid", authenticate, async function (req, res, next) {
   };
 });
 
+router.patch("/update-post/:id", authenticate, async function(req, res, next) {
+  const { id } = req.params;
+  let { title, content } = req.body;
+  title = title.trim();
+  content = content.trim();
+  const edited = new Date().toISOString().slice(0, 10);
+
+  try {
+    const getPostReq = await pool.query(
+      "SELECT * FROM posts WHERE id = ($1)",
+      [id]
+    );
+    const postAuthorUsername = getPostReq.rows[0].authorusername;
+    if (postAuthorUsername === res.locals.username) {
+      const updatePostReq = await pool.query(
+        "UPDATE posts SET title = ($1), content = ($2), edited = ($3) WHERE id = ($4)",
+        [title, content, edited, id]
+      );
+      res.status(200).json("Post successfully updated.");
+    } else {
+      throw new Error("You do not have permission to edit this post as you are not the original author.");
+    };
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.delete("/delete-post/:id", authenticate, async function(req, res, next) {
+  const { id } = req.params;
+
+  try {
+    const getPostReq = await pool.query(
+      "SELECT * FROM posts WHERE id = ($1)",
+      [id]
+    );
+    const postAuthorUsername = getPostReq.rows[0].authorusername;
+    if (postAuthorUsername === res.locals.username) {
+      const deletePostReq = await pool.query(
+        "DELETE FROM posts WHERE id = ($1)",
+        [id]
+      );
+      res.status(200).json("Post successfully deleted.");
+    } else {
+      throw new Error("You do not have permission to delete this post as you are not the original author.");
+    };
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
 router.patch("/update-reactions/:table/:id", authenticate, async function(req, res, next) {
   const { table, id } = req.params;
   const { likes, dislikes } = req.body;
@@ -744,13 +796,7 @@ router.get("/pull-comments/:id", authenticate, async function(req, res, next) {
       if (pullCommentsReq.rowCount > 0) {
         for (const comment of pullCommentsReq.rows) {
           comment.level = level;
-          if (level === 0) {
-              arr.push(comment);
-          } else {
-              const parentIndex = arr.findIndex(parentComment => parentComment.id === comment.postid);
-              arr.splice(parentIndex + 1, 0, comment);
-          };
-
+          arr.push(comment);
           await pullComments(comment.id, level + 1, arr);
         };
       } else {
@@ -765,7 +811,6 @@ router.get("/pull-comments/:id", authenticate, async function(req, res, next) {
     let finalCommentTree = [];
     let level = 0;
     await pullComments(id, level, finalCommentTree);
-    
     res.status(200).json(finalCommentTree);
   } catch(err) {
     console.log(err.message);
@@ -802,7 +847,7 @@ router.patch("/update-comment/:id", authenticate, async function(req, res, next)
       "SELECT * FROM comments WHERE id = ($1)",
       [id]
     );
-    const commentAuthorUsername = getCommentRew.rows[0].authorusername;
+    const commentAuthorUsername = getCommentReq.rows[0].authorusername;
     if (commentAuthorUsername === res.locals.username) {
       const updateCommentReq = await pool.query(
         "UPDATE comments SET content = ($1), edited = ($2) WHERE id = ($3)",
@@ -826,7 +871,7 @@ router.delete("/delete-comment/:id", authenticate, async function(req, res, next
       "SELECT * FROM comments WHERE id = ($1)",
       [id]
     );
-    const commentAuthorUsername = getCommentRew.rows[0].authorusername;
+    const commentAuthorUsername = getCommentReq.rows[0].authorusername;
     if (commentAuthorUsername === res.locals.username) {
       const deleteCommentReq = await pool.query(
         "DELETE FROM comments WHERE id = ($1)",
