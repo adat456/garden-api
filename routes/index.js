@@ -664,10 +664,16 @@ router.get("/pull-posts/:bedid", authenticate, async function(req, res, next) {
 
   try {
     const pullPosts = await pool.query(
-      "SELECT * FROM posts WHERE bedid = ($1)",
+      "SELECT * FROM posts WHERE bedid = ($1) ORDER BY posted DESC",
       [bedid]
     );
-    res.status(200).json(pullPosts.rows);
+    const pinnedPostsToTheFrontArr = [];
+    pullPosts.rows.forEach(post => {
+      if (post.pinned) pinnedPostsToTheFrontArr.unshift(post);
+      if (!post.pinned) pinnedPostsToTheFrontArr.push(post);
+    });
+    console.log(pinnedPostsToTheFrontArr);
+    res.status(200).json(pinnedPostsToTheFrontArr);
   } catch(err) {
     console.log(err.message);
     res.status(404).json(err.message);
@@ -677,7 +683,7 @@ router.get("/pull-posts/:bedid", authenticate, async function(req, res, next) {
 router.post("/add-post/:bedid", authenticate, async function (req, res, next) {
   let { bedid } = req.params;
   bedid = Number(bedid);
-  let { title, content, id } = req.body;
+  let { title, content, pinned, id } = req.body;
   title = title.trim();
   content = content.trim();
   const posted = new Date().toISOString().slice(0, 10);
@@ -685,7 +691,7 @@ router.post("/add-post/:bedid", authenticate, async function (req, res, next) {
   try {
     const addPost = await pool.query(
       "INSERT INTO posts (bedid, authorid, authorname, authorusername, posted, edited, title, content, likes, dislikes, pinned, id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
-      [bedid, res.locals.user.id, `${res.locals.user.firstname} ${res.locals.user.lastname}`, res.locals.username, posted, null, title, content, [], [], false, id]
+      [bedid, res.locals.user.id, `${res.locals.user.firstname} ${res.locals.user.lastname}`, res.locals.username, posted, null, title, content, [], [], pinned, id]
     );
     res.status(200).json("Successfully added a post.");
   } catch(err) {
@@ -696,7 +702,7 @@ router.post("/add-post/:bedid", authenticate, async function (req, res, next) {
 
 router.patch("/update-post/:id", authenticate, async function(req, res, next) {
   const { id } = req.params;
-  let { title, content } = req.body;
+  let { title, content, pinned } = req.body;
   title = title.trim();
   content = content.trim();
   const edited = new Date().toISOString().slice(0, 10);
@@ -709,8 +715,8 @@ router.patch("/update-post/:id", authenticate, async function(req, res, next) {
     const postAuthorUsername = getPostReq.rows[0].authorusername;
     if (postAuthorUsername === res.locals.username) {
       const updatePostReq = await pool.query(
-        "UPDATE posts SET title = ($1), content = ($2), edited = ($3) WHERE id = ($4)",
-        [title, content, edited, id]
+        "UPDATE posts SET title = ($1), content = ($2), edited = ($3), pinned = ($4) WHERE id = ($5)",
+        [title, content, edited, pinned, id]
       );
       res.status(200).json("Post successfully updated.");
     } else {
@@ -887,6 +893,27 @@ router.delete("/delete-comment/:id", authenticate, async function(req, res, next
   };
 });
 
-
+router.get("/pull-weather/:latitude/:longitude", authenticate, async function(req, res, next) {
+  const { latitude, longitude } = req.params;
+  
+  try {
+    const weatherRequest = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${process.env.WEATHER_API_KEY}`);
+    const weatherData = await weatherRequest.json();
+    if (weatherRequest.ok) {
+      res.status(200).json({
+        type: weatherData.weather[0].main,
+        temp_min: weatherData.main.temp_min,
+        temp_max: weatherData.main.temp_max,
+        temp: weatherData.main.temp,
+        temp_feels_like: weatherData.main.feels_like,
+        humidity: weatherData.main.humidity,
+        wind_speed: weatherData.wind.speed,
+      });
+    };
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
 
 module.exports = router;
