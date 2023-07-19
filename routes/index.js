@@ -30,6 +30,7 @@ let redisClient = null;
 
 async function authenticate(req, res, next) {
   const token = req.cookies.jwt;
+  console.log(token);
 
   try {
     if (token) {
@@ -472,18 +473,19 @@ router.get("/pull-notifications", authenticate, async function(req, res, next) {
 });
 
 router.post("/add-notification", authenticate, async function(req, res, next) {
-  let { senderid, sendername, senderusername, recipientid, message, dispatched, acknowledged, type, bedid, eventid } = req.body;                     
+  let { senderid, sendername, senderusername, recipientid, message, dispatched, type, bedid, eventid } = req.body;                     
 
   try {
     const addNotificationReq = await pool.query(
-      "INSERT INTO notifications (senderid, sendername, senderusername, recipientid, message, dispatched, acknowledged, type, bedid, eventid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
-      [senderid, sendername, senderusername, recipientid, message, dispatched, acknowledged, type, bedid, eventid]
+      "INSERT INTO notifications (senderid, sendername, senderusername, recipientid, message, dispatched, read, responded, type, bedid, eventid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+      [senderid, sendername, senderusername, recipientid, message, dispatched, false, false, type, bedid, eventid]
     );
 
-    // const io = req.app.get("io");
-    req.io.emit(`notifications-${recipientid}`, "New notification");
+    // notifies recipient via socket of the type of notification, which will then prompt manual refetching of notifications AND certain data when applicable
+    req.io.emit(`notifications-${recipientid}`, type);
 
-    if (type === "acceptance" && bedid) {
+    // adding member to bed upon confirmation
+    if (type === "memberconfirmation" && bedid) {
       const bedMembersReq = await pool.query(
         "SELECT members FROM garden_beds WHERE id = ($1)",
         [bedid]
@@ -505,6 +507,19 @@ router.post("/add-notification", authenticate, async function(req, res, next) {
       );
     };
 
+    if (type === "rsvpconfirmation" && eventid) {
+      const eventRSVPsReceived = await pool.query(
+        "SELECT rsvpsreceived FROM events WHERE id = ($1)",
+        [eventid]
+      );
+      console.log(eventRSVPsReceived);
+      const updatedRsvps = [...eventRSVPsReceived.rows[0].rsvpsreceived, senderid];
+      const updateRSVPs = await pool.query(
+        "UPDATE events SET rsvpsreceived = ($1) WHERE id = ($2)",
+        [updatedRsvps, eventid]
+      );
+    };
+
     res.status(200).json("Notification successfully added.");
   } catch(err) {
     console.log(err.message);
@@ -515,13 +530,21 @@ router.post("/add-notification", authenticate, async function(req, res, next) {
 router.patch("/update-notification/:notifid", authenticate, async function(req, res, next) {
   let { notifid } = req.params;
   notifid = Number(notifid);
-  const { acknowledged } = req.body;
+  const { read, responded } = req.body;
   
   try {
+    // read will always be part of req.body, whether true or false
     const req = await pool.query(
-      "UPDATE notifications SET acknowledged = ($1) WHERE id = ($2)",
-      [acknowledged, notifid]
+      "UPDATE notifications SET read = ($1) WHERE id = ($2)",
+      [read, notifid]
     );
+    // responded will only be included if true
+    if (responded) {
+      const req = await pool.query(
+        "UPDATE notifications SET responded = ($1) WHERE id = ($2)",
+        [responded, notifid]
+      );
+    };
     res.status(200).json("Notification successfully updated.")
   } catch(err) {
     console.log(err.message);
@@ -564,13 +587,13 @@ router.get("/pull-events/:bedid", authenticate, async function(req, res, next) {
 router.post("/add-event/:bedid", authenticate, async function(req, res, next) {
   let { bedid } = req.params;
   bedid = Number(bedid);
-  let { creatorId, creatorUsername, creatorName, eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventDate, eventStartTime, eventEndTime, repeating, repeatEvery, repeatTill, repeatId, tags, rsvpNeeded, rsvpDate } = req.body;
+  let { id, creatorId, creatorUsername, creatorName, eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventDate, eventStartTime, eventEndTime, repeating, repeatEvery, repeatTill, repeatId, tags, rsvpNeeded, rsvpDate } = req.body;
   eventParticipants = JSON.stringify(eventParticipants);
 
   try {
     const req = await pool.query(
-      "INSERT INTO events (bedid, creatorid, creatorname, creatorusername, eventname, eventdesc, eventlocation, eventpublic, eventparticipants, eventstarttime, eventendtime, eventdate, repeating, repeatevery, repeattill, repeatid, tags, rsvpneeded, rsvpdate, rsvpsreceived) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)",
-      [bedid, creatorId, creatorName, creatorUsername, eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventStartTime, eventEndTime, eventDate, repeating, repeatEvery, repeatTill, repeatId, tags, rsvpNeeded, rsvpDate, []]
+      "INSERT INTO events (id, bedid, creatorid, creatorname, creatorusername, eventname, eventdesc, eventlocation, eventpublic, eventparticipants, eventstarttime, eventendtime, eventdate, repeating, repeatevery, repeattill, repeatid, tags, rsvpneeded, rsvpdate, rsvpsreceived) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)",
+      [id, bedid, creatorId, creatorName, creatorUsername, eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventStartTime, eventEndTime, eventDate, repeating, repeatEvery, repeatTill, repeatId, tags, rsvpNeeded, rsvpDate, []]
     );
 
     const pullBedTagsReq = await pool.query(
@@ -595,8 +618,7 @@ router.post("/add-event/:bedid", authenticate, async function(req, res, next) {
 });
 
 router.delete("/delete-event/:eventid/:repeatid", authenticate, async function(req, res, next) {
-  let { eventid, repeatid } = req.params;
-  eventid = Number(eventid);
+  const { eventid, repeatid } = req.params;
   // repeatid will either be "undefined" (comes in as a string on account of it being a param) or a "string", so if repeatid is not "undefined" then delete all counterparts
 
   try {
@@ -910,6 +932,37 @@ router.get("/pull-weather/:latitude/:longitude", authenticate, async function(re
         wind_speed: weatherData.wind.speed,
       });
     };
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.get("/get-bed-name-by-id/:id", authenticate, async function(req, res, next) {
+  let { id } = req.params;
+  id = Number(id);
+
+  try {
+    const fetchBedName = await pool.query(
+      "SELECT name FROM garden_beds WHERE id = ($1)",
+      [id]
+    );
+    res.status(200).json(fetchBedName.rows[0].name);
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.get("/get-event-name-by-id/:id", authenticate, async function(req, res, next) {
+  let { id } = req.params;
+
+  try {
+    const fetchEventName = await pool.query(
+      "SELECT eventname FROM events WHERE id = ($1)",
+      [id]
+    );
+    res.status(200).json(fetchEventName.rows[0].eventname);
   } catch(err) {
     console.log(err.message);
     res.status(404).json(err.message);

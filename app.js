@@ -19,7 +19,6 @@ const io = socketIo(server, {
 });
 io.on("connection", (socket) => {
   console.log(`${socket.id} connected`);
-  socket.on("hello", (arg) => console.log(arg));
 });
 // app.set("io", io);
 app.use(function(req, res, next) {
