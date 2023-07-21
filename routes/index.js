@@ -6,6 +6,11 @@ const { Pool } = require("pg");
 const jwt = require("jsonwebtoken");
 const redis = require("redis");
 
+const { checkSchema } = require("express-validator");
+const { bedNameSchema, rolesSchema } = require ('../schemas/bedSchemas');
+const bedController = require("../controllers/bedController");
+const vegController = require("../controllers/vegController");
+
 const pool = new Pool({
   user: process.env.PSQL_USER,
   database: "garden_data",
@@ -80,94 +85,30 @@ router.get("/pull-user-data", authenticate, async function(req, res, next) {
   };
 });
 
-router.get("/pull-beds-data", authenticate, async function(req, res, next) {
-  try {
-    const getUserBoardsReq = await pool.query(
-      "SELECT * FROM garden_beds WHERE username = ($1)",
-      [res.locals.username]
-    );
-    const getMemberBoardsReq = await pool.query(
-      "SELECT * FROM garden_beds WHERE members::JSONB @> ($1)",
-      // "SELECT * FROM garden_beds WHERE members::JSONB @> '[{ ($1) : ($2) }]'",
-      // [JSON.stringify("username"), JSON.stringify(res.locals.username)]
-      // above code didn't work, nor when "username" was placed directly as the first argument instead of passing it in as a parameter... would get error message "invalid input syntax for type json"
-      [JSON.stringify([{ "username": res.locals.username }])]
-    );
-    res.status(200).json([...getUserBoardsReq.rows, ...getMemberBoardsReq.rows]);
-  } catch(err) {
-    console.log(err.message);
-    res.status(400).json(err.message);
-  };
-});
+/// GARDEN BED ENDPOINTS ///
+router.get("/all-public-beds", authenticate, bedController.pull_all_public_beds);
 
-router.post("/create-bed", authenticate, async function(req, res, next) {
-  const { hardiness, sunlight, soil, whole, length, width, gridmap, name, public, created } = req.body;
-  const gridmapJSON = JSON.stringify(gridmap);
-    
-  try {
-    // create the new bed and retrive its id
-    const addNewBedReq = await pool.query(
-      "INSERT INTO garden_beds (hardiness, sunlight, soil, whole, length, width, gridMap, name, public, created, username, numhearts, numcopies, seedbasket, members, roles, eventtags) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *",
-      [hardiness, sunlight, soil, whole, length, width, gridmapJSON, name, public, created, res.locals.username, 0, 0, JSON.stringify([]), JSON.stringify([]), JSON.stringify([]), []]
-    );
-    const newBoard = addNewBedReq.rows[0];
+router.get("/pull-beds-data", authenticate, bedController.pull_beds_data);
 
-    // may not be necessary to add the bedid to the user table, as the user's username is already included in the bed tabl
-    // const newBoardId = newBoard.id;
-    // // retrieve the user's array of board ids
-    // const getUserBoardsReq = await pool.query(
-    //   "SELECT board_ids FROM users WHERE username = $1",
-    //   [res.locals.username]
-    // );
-    // // add the new board id...
-    // const boardIds = [...getUserBoardsReq.rows[0].board_ids, newBoardId];
-    // // and update the user's data with this updated board id array
-    // const updatedUserBoardsReq = await pool.query(
-    //   "UPDATE users SET board_ids = $1 WHERE username = $2",
-    //   [boardIds, res.locals.username]
-    // );
+router.post("/create-bed", authenticate, checkSchema(bedNameSchema, ["body"]), bedController.create_bed);
 
-    res.status(200).json(newBoard);
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
+router.patch("/update-bed/:bedid", authenticate, checkSchema(bedNameSchema, ["body"]), bedController.update_bed);
 
-router.patch("/update-bed/:bedid", authenticate, async function(req, res, next) {
-  let { bedid } = req.params;
-  bedid = Number(bedid);
-  const { hardiness, sunlight, soil, whole, length, width, gridmap, name, public } = req.body;
-  const gridmapJSON = JSON.stringify(gridmap);
-    
-  try {
-    const updateBedReq = await pool.query(
-      "UPDATE garden_beds SET hardiness = ($1), sunlight = ($2), soil = ($3), whole = ($4), length = ($5), width = ($6), gridmap = ($7), name = ($8), public = ($9) WHERE id = ($10)",
-      [hardiness, sunlight, soil, whole, length, width, gridmapJSON, name, public, bedid]
-    );
-    res.status(200).json("Successfully updated bed.");
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
+router.patch("/update-gridmap/:bedid", authenticate, bedController.update_gridmap);
 
-router.delete("/delete-bed/:bedid", authenticate, async function(req, res, next) {
-  let { bedid } = req.params;
-  bedid = Number(bedid);
+router.patch("/update-roles/:bedid", authenticate, checkSchema(rolesSchema, ["body"]), bedController.update_roles);
 
-  try {
-    const deleteReq = await pool.query(
-      "DELETE FROM garden_beds WHERE id = ($1)",
-      [bedid]
-    );
-    res.status(200).json("Bed successfully deleted.");
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
+router.patch("/update-members/:bedid", authenticate, bedController.update_members);
 
+router.delete("/delete-bed/:bedid", authenticate, bedController.delete_bed);
+
+/// VEG DATA ENDPOINTS ///
+router.post("/save-veg-data/:returning", authenticate, vegController.save_veg_data);
+
+router.patch("/update-veg-data/:vegid", authenticate, vegController.update_veg_data);
+
+
+/// MISC /// 
 router.get("/search/:term", authenticate, async function(req, res, next) {
   const spacedTerm = req.params.term.replace(/-/g, " ");
   
@@ -198,21 +139,11 @@ router.patch("/update-seed-basket/:bedid", authenticate, async function(req, res
   seedbasket = JSON.stringify(seedbasket);
 
   try {
-    // // first retrieve the user's array of board ids
-    // const getUserBoardsReq = await pool.query(
-    //   "SELECT board_ids FROM users WHERE username = $1",
-    //   [res.locals.username]
-    // );
-    // if (getUserBoardsReq.rows[0].board_ids.includes(bedid)) {
-      // opted not to return the updated seedbasket because the updateSeedBasket mutation invalidates the tags associated with the getBeds query, which will automatically refetch the updated beds data (and the seedbasket along with it)
-      const req = await pool.query(
-        "UPDATE garden_beds SET seedbasket = ($1) WHERE id = ($2)",
-        [seedbasket, bedid]
-      );
-      res.status(200).json("Seedbasket successfully updated.");
-    // } else {
-    //   throw new Error("Permission to edit this plot has not been granted.");
-    // };
+    const req = await pool.query(
+      "UPDATE garden_beds SET seedbasket = ($1) WHERE id = ($2)",
+      [seedbasket, bedid]
+    );
+    res.status(200).json("Seedbasket successfully updated.");
   } catch(err) {
     console.log(err.message);
     res.status(400).json(err.message);
@@ -229,76 +160,6 @@ router.get("/pull-seed-contributions", authenticate, async function(req, res, ne
   } catch(err) {
     console.log(err.message);
     res.status(404).json(err.message);
-  };
-});
-
-router.post("/save-veg-data/:returning", authenticate, async function(req, res, next) {
-  const { returning } = req.params;
-  for (let prop in req.body) {
-    if (typeof prop === "string") prop = prop.trim();
-  };
-  const { name, description, hardiness, water, light, growthConditionsArr, lifecycle, plantingSzn, sowingMethodArr, depth, spacingArr, growthHabitArr, dtmArr, heightArr, fruitSize, privateData } = req.body;
-
-  try {
-     const addNewVegReq = await pool.query(
-      "INSERT INTO veg_data_users (name, description, plantingseason, fruitsize, growthhabit, growconditions, sowingmethod, light, depth, heightin, spacingin, water, hardiness, daystomaturity, lifecycle, privatedata, contributor) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *",
-      [name, description, plantingSzn, fruitSize, growthHabitArr, growthConditionsArr, sowingMethodArr, light, depth, heightArr, spacingArr, water, hardiness, dtmArr, lifecycle, privateData, res.locals.username]
-    );
-
-    if (returning === "single") {
-      res.status(200).json(addNewVegReq.rows[0]);
-    };
-
-    if (returning === "all") {
-      const pullAllVeg = await pool.query(
-        "SELECT * FROM veg_data_users WHERE contributor = ($1)",
-        [res.locals.username]
-      );
-      res.status(200).json(pullAllVeg.rows);
-    }
-    
-  } catch(err) {
-    console.log(err.message);
-    res.status(400).json(err.message);
-  };
-});
-
-router.patch("/update-veg-data/:vegid", authenticate, async function(req, res, next) {
-  let { vegid } = req.params;
-  vegid = Number(vegid);
-  for (let prop in req.body) {
-    if (typeof prop === "string") prop = prop.trim();
-  };
-  const { name, description, hardiness, water, light, growthConditionsArr, lifecycle, plantingSzn, sowingMethodArr, depth, spacingArr, growthHabitArr, dtmArr, heightArr, fruitSize, privateData } = req.body;
-
-  try {
-     const updateVegReq = await pool.query(
-      "UPDATE veg_data_users SET name = ($1), description = ($2), plantingseason = ($3), fruitsize = ($4), growthhabit = ($5), growconditions = ($6), sowingmethod = ($7), light = ($8), depth = ($9), heightin = ($10), spacingin = ($11), water = ($12), hardiness = ($13), daystomaturity = ($14), lifecycle = ($15), privatedata = ($16) WHERE id = ($17)",
-      [name, description, plantingSzn, fruitSize, growthHabitArr, growthConditionsArr, sowingMethodArr, light, depth, heightArr, spacingArr, water, hardiness, dtmArr, lifecycle, privateData, vegid]
-    );
-
-    const pullAllVeg = await pool.query(
-      "SELECT * FROM veg_data_users WHERE contributor = ($1)",
-      [res.locals.username]
-    );
-
-    res.status(200).json(pullAllVeg.rows);
-  } catch(err) {
-    console.log(err.message);
-    res.status(400).json(err.message);
-  };
-});
-
-router.get("/all-public-beds", authenticate, async function(req, res, next) {
-  try {
-    const recentPublicBedsReq = await pool.query(
-      "SELECT * FROM garden_beds WHERE public = $1 AND username != $2",
-      [true, res.locals.username]
-    );
-    res.status(200).json(recentPublicBedsReq.rows);
-  } catch(err) {
-    console.log(err.message);
-    res.status(400).json(err.message);
   };
 });
 
@@ -400,62 +261,6 @@ router.get("/find-users/:searchTerm", authenticate, async function(req, res, nex
   };
 });
 
-// ///// BED PATCH/UPDATE REQUESTS /////////////////
-
-router.patch("/update-gridmap/:bedid", authenticate, async function(req, res, next) {
-  let { bedid } = req.params;
-  bedid = Number(bedid); 
-  const gridmap = req.body;
-  const gridmapJSON = JSON.stringify(gridmap);
-
-  try {
-    const req = await pool.query(
-      "UPDATE garden_beds SET gridmap = ($1) WHERE id = ($2)",
-      [gridmapJSON, bedid]
-    );
-    res.status(200).json("Gridmap successfully updated.");
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
-
-router.patch("/update-roles/:bedid", authenticate, async function(req, res, next) {
-  let { bedid } = req.params;
-  bedid = Number(bedid); 
-  const roles = req.body;
-  const rolesJSON = JSON.stringify(roles);
-
-  try {
-    const updateRolesReq = await pool.query(
-      "UPDATE garden_beds SET roles = ($1) WHERE id = ($2)",
-      [rolesJSON, bedid]
-    );
-    res.status(200).json("Bed roles updated.");
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
-
-router.patch("/update-members/:bedid", authenticate, async function(req, res, next) {
-  let { bedid } = req.params;
-  bedid = Number(bedid); 
-  const members = req.body;
-  const membersJSON = JSON.stringify(members);
-
-  try {
-    const updateMembersReq = await pool.query(
-      "UPDATE garden_beds SET members = ($1) WHERE id = ($2)",
-      [membersJSON, bedid]
-    );
-    res.status(200).json("Members updated.");
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
-
 
 //////// NOTIFICATIONS ////////////////////
 
@@ -496,7 +301,7 @@ router.post("/add-notification", authenticate, async function(req, res, next) {
           return member;
         } else {
           const date = new Date().toString();
-          return {...member, status: "final", finaldate: date};
+          return {...member, status: "accepted", finaldate: date};
         };
       });
       members = JSON.stringify(members);
@@ -507,6 +312,7 @@ router.post("/add-notification", authenticate, async function(req, res, next) {
       );
     };
 
+    // adding member to rsvpsreceived in event upon confirmation
     if (type === "rsvpconfirmation" && eventid) {
       const eventRSVPsReceived = await pool.query(
         "SELECT rsvpsreceived FROM events WHERE id = ($1)",
