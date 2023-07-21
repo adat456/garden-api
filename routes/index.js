@@ -9,10 +9,12 @@ const redis = require("redis");
 const { checkSchema } = require("express-validator");
 const { bedNameSchema, rolesSchema } = require ("../schemas/bedSchemas");
 const { vegSchema } = require("../schemas/vegSchemas");
+const { eventBedIdSchema, addEventSchema, deleteEventSchema } = require("../schemas/eventSchemas");
 const { postSchema, postIdSchema, updateReactionsSchema } = require("../schemas/postSchemas");
 const { commentPostIdSchema, commentContentSchema, commentIdSchema } = require("../schemas/commentSchemas");
 const bedController = require("../controllers/bedController");
 const vegController = require("../controllers/vegController");
+const eventsController = require("../controllers/eventsController");
 const postsController = require("../controllers/postsController");
 const commentsController = require("../controllers/commentsController");
 
@@ -111,8 +113,148 @@ router.post("/save-veg-data/:returning", authenticate, checkSchema(vegSchema, ["
 
 router.patch("/update-veg-data/:vegid", authenticate, checkSchema(vegSchema, ["body"]), vegController.update_veg_data);
 
+//////// NOTIFICATIONS ////////////////////
 
-/// MISC /// 
+router.get("/pull-notifications", authenticate, async function(req, res, next) {
+  try {
+    const notificationsReq = await pool.query(
+      "SELECT * FROM notifications WHERE recipientid = ($1)",
+      [res.locals.user.id]
+    );
+    res.status(200).json(notificationsReq.rows);
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.post("/add-notification", authenticate, async function(req, res, next) {
+  let { senderid, sendername, senderusername, recipientid, message, dispatched, type, bedid, eventid } = req.body;                     
+
+  try {
+    const addNotificationReq = await pool.query(
+      "INSERT INTO notifications (senderid, sendername, senderusername, recipientid, message, dispatched, read, responded, type, bedid, eventid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+      [senderid, sendername, senderusername, recipientid, message, dispatched, false, false, type, bedid, eventid]
+    );
+
+    // notifies recipient via socket of the type of notification, which will then prompt manual refetching of notifications AND certain data when applicable
+    req.io.emit(`notifications-${recipientid}`, type);
+
+    // adding member to bed upon confirmation
+    if (type === "memberconfirmation" && bedid) {
+      const bedMembersReq = await pool.query(
+        "SELECT members FROM garden_beds WHERE id = ($1)",
+        [bedid]
+      );
+      let members = bedMembersReq.rows[0].members;
+      members = members.map(member => {
+        if (member.id !== senderid) {
+          return member;
+        } else {
+          const date = new Date().toString();
+          return {...member, status: "accepted", finaldate: date};
+        };
+      });
+      members = JSON.stringify(members);
+
+      const updateBedMembersReq = await pool.query(
+        "UPDATE garden_beds SET members = ($1) WHERE id = ($2)",
+        [members, bedid]
+      );
+    };
+
+    // adding member to rsvpsreceived in event upon confirmation
+    if (type === "rsvpconfirmation" && eventid) {
+      const eventRSVPsReceived = await pool.query(
+        "SELECT rsvpsreceived FROM events WHERE id = ($1)",
+        [eventid]
+      );
+      console.log(eventRSVPsReceived);
+      const updatedRsvps = [...eventRSVPsReceived.rows[0].rsvpsreceived, senderid];
+      const updateRSVPs = await pool.query(
+        "UPDATE events SET rsvpsreceived = ($1) WHERE id = ($2)",
+        [updatedRsvps, eventid]
+      );
+    };
+
+    res.status(200).json("Notification successfully added.");
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.patch("/update-notification/:notifid", authenticate, async function(req, res, next) {
+  let { notifid } = req.params;
+  notifid = Number(notifid);
+  const { read, responded } = req.body;
+  
+  try {
+    // read will always be part of req.body, whether true or false
+    const req = await pool.query(
+      "UPDATE notifications SET read = ($1) WHERE id = ($2)",
+      [read, notifid]
+    );
+    // responded will only be included if true
+    if (responded) {
+      const req = await pool.query(
+        "UPDATE notifications SET responded = ($1) WHERE id = ($2)",
+        [responded, notifid]
+      );
+    };
+    res.status(200).json("Notification successfully updated.")
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.delete("/delete-notification/:notifid", authenticate, async function(req, res, next) {
+  let { notifid } = req.params;
+  notifid = Number(notifid);
+  
+  try {
+    const req = await pool.query(
+      "DELETE FROM notifications WHERE id = ($1)",
+      [notifid]
+    );
+    res.status(200).json("Notification successfully deleted.")
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+/// EVENT ENDPOINTS /// 
+router.get("/pull-events/:bedid", authenticate, checkSchema(eventBedIdSchema, ["params"]), eventsController.pull_events);
+
+router.post("/add-event/:bedid", authenticate, checkSchema(eventBedIdSchema, ["params"]), checkSchema(addEventSchema, ["body"]), eventsController.add_event);
+
+router.delete("/delete-event/:eventid/:repeatid", authenticate, checkSchema(deleteEventSchema, ["params"]), eventsController.delete_event);
+
+router.patch("/delete-tag/:bedid", authenticate, eventsController.delete_tag);
+
+/// POST ENDPOINTS ///
+router.get("/pull-posts/:bedid", authenticate, postsController.pull_posts);
+
+router.post("/add-post/:bedid", authenticate, checkSchema(postSchema, ["body"]), checkSchema(postIdSchema, ["body"]), postsController.add_post);
+
+router.patch("/update-post/:id", authenticate, checkSchema(postSchema, ["body"]), checkSchema(postIdSchema, ["params"]), postsController.update_post);
+
+router.delete("/delete-post/:id", authenticate, checkSchema(postIdSchema, ["params"]), postsController.delete_post);
+
+router.patch("/update-reactions/:table/:id", authenticate, checkSchema(updateReactionsSchema, ["params", "body"]), postsController.update_reactions);
+
+/// COMMENT ENDPOINTS ///
+router.get("/pull-comments/:postid", authenticate, checkSchema(commentPostIdSchema, ["params"]), commentsController.pull_comments);
+
+router.post("/add-comment/:postid", authenticate, checkSchema(commentPostIdSchema, ["params"]), checkSchema(commentContentSchema, ["body"]), checkSchema(commentIdSchema, ["body"]), commentsController.add_comment);
+
+router.patch("/update-comment/:id", authenticate, checkSchema(commentIdSchema, ["params"]), checkSchema(commentContentSchema, ["body"]), commentsController.update_comment);
+
+router.delete("/delete-comment/:id", authenticate, checkSchema(commentIdSchema, ["params"]), commentsController.delete_comment);
+
+/// MISC ENDPOINTS ///
 router.get("/search/:term", authenticate, async function(req, res, next) {
   const spacedTerm = req.params.term.replace(/-/g, " ");
   
@@ -265,252 +407,6 @@ router.get("/find-users/:searchTerm", authenticate, async function(req, res, nex
   };
 });
 
-
-//////// NOTIFICATIONS ////////////////////
-
-router.get("/pull-notifications", authenticate, async function(req, res, next) {
-  try {
-    const notificationsReq = await pool.query(
-      "SELECT * FROM notifications WHERE recipientid = ($1)",
-      [res.locals.user.id]
-    );
-    res.status(200).json(notificationsReq.rows);
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
-
-router.post("/add-notification", authenticate, async function(req, res, next) {
-  let { senderid, sendername, senderusername, recipientid, message, dispatched, type, bedid, eventid } = req.body;                     
-
-  try {
-    const addNotificationReq = await pool.query(
-      "INSERT INTO notifications (senderid, sendername, senderusername, recipientid, message, dispatched, read, responded, type, bedid, eventid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
-      [senderid, sendername, senderusername, recipientid, message, dispatched, false, false, type, bedid, eventid]
-    );
-
-    // notifies recipient via socket of the type of notification, which will then prompt manual refetching of notifications AND certain data when applicable
-    req.io.emit(`notifications-${recipientid}`, type);
-
-    // adding member to bed upon confirmation
-    if (type === "memberconfirmation" && bedid) {
-      const bedMembersReq = await pool.query(
-        "SELECT members FROM garden_beds WHERE id = ($1)",
-        [bedid]
-      );
-      let members = bedMembersReq.rows[0].members;
-      members = members.map(member => {
-        if (member.id !== senderid) {
-          return member;
-        } else {
-          const date = new Date().toString();
-          return {...member, status: "accepted", finaldate: date};
-        };
-      });
-      members = JSON.stringify(members);
-
-      const updateBedMembersReq = await pool.query(
-        "UPDATE garden_beds SET members = ($1) WHERE id = ($2)",
-        [members, bedid]
-      );
-    };
-
-    // adding member to rsvpsreceived in event upon confirmation
-    if (type === "rsvpconfirmation" && eventid) {
-      const eventRSVPsReceived = await pool.query(
-        "SELECT rsvpsreceived FROM events WHERE id = ($1)",
-        [eventid]
-      );
-      console.log(eventRSVPsReceived);
-      const updatedRsvps = [...eventRSVPsReceived.rows[0].rsvpsreceived, senderid];
-      const updateRSVPs = await pool.query(
-        "UPDATE events SET rsvpsreceived = ($1) WHERE id = ($2)",
-        [updatedRsvps, eventid]
-      );
-    };
-
-    res.status(200).json("Notification successfully added.");
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
-
-router.patch("/update-notification/:notifid", authenticate, async function(req, res, next) {
-  let { notifid } = req.params;
-  notifid = Number(notifid);
-  const { read, responded } = req.body;
-  
-  try {
-    // read will always be part of req.body, whether true or false
-    const req = await pool.query(
-      "UPDATE notifications SET read = ($1) WHERE id = ($2)",
-      [read, notifid]
-    );
-    // responded will only be included if true
-    if (responded) {
-      const req = await pool.query(
-        "UPDATE notifications SET responded = ($1) WHERE id = ($2)",
-        [responded, notifid]
-      );
-    };
-    res.status(200).json("Notification successfully updated.")
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
-
-router.delete("/delete-notification/:notifid", authenticate, async function(req, res, next) {
-  let { notifid } = req.params;
-  notifid = Number(notifid);
-  
-  try {
-    const req = await pool.query(
-      "DELETE FROM notifications WHERE id = ($1)",
-      [notifid]
-    );
-    res.status(200).json("Notification successfully deleted.")
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
-
-router.get("/pull-events/:bedid", authenticate, async function(req, res, next) {
-  let { bedid } = req.params;
-  bedid = Number(bedid);
-
-  try {
-    const req = await pool.query(
-      "SELECT * FROM events WHERE bedid = ($1)",
-      [bedid]
-    );
-    res.status(200).json(req.rows);
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
-
-router.post("/add-event/:bedid", authenticate, async function(req, res, next) {
-  let { bedid } = req.params;
-  bedid = Number(bedid);
-  let { id, creatorId, creatorUsername, creatorName, eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventDate, eventStartTime, eventEndTime, repeating, repeatEvery, repeatTill, repeatId, tags, rsvpNeeded, rsvpDate } = req.body;
-  eventParticipants = JSON.stringify(eventParticipants);
-
-  try {
-    const req = await pool.query(
-      "INSERT INTO events (id, bedid, creatorid, creatorname, creatorusername, eventname, eventdesc, eventlocation, eventpublic, eventparticipants, eventstarttime, eventendtime, eventdate, repeating, repeatevery, repeattill, repeatid, tags, rsvpneeded, rsvpdate, rsvpsreceived) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)",
-      [id, bedid, creatorId, creatorName, creatorUsername, eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventStartTime, eventEndTime, eventDate, repeating, repeatEvery, repeatTill, repeatId, tags, rsvpNeeded, rsvpDate, []]
-    );
-
-    const pullBedTagsReq = await pool.query(
-      "SELECT eventtags FROM garden_beds WHERE id = ($1)",
-      [bedid]
-    );
-    const currentEventTags = pullBedTagsReq.rows[0].eventtags;
-    let newEventTags = [];
-    tags.forEach(tag => {
-      if (!currentEventTags.includes(tag)) newEventTags.push(tag);
-    });
-    const updateBedTagsReq = await pool.query(
-      "UPDATE garden_beds SET eventtags = ($1) WHERE id = ($2)",
-      [[...currentEventTags, ...newEventTags], bedid]
-    );
-
-    res.status(200).json("Event successfully added.");
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
-
-router.delete("/delete-event/:eventid/:repeatid", authenticate, async function(req, res, next) {
-  const { eventid, repeatid } = req.params;
-  // repeatid will either be "undefined" (comes in as a string on account of it being a param) or a "string", so if repeatid is not "undefined" then delete all counterparts
-
-  try {
-    if (repeatid !== "undefined") {
-      const req = await pool.query(
-        "DELETE FROM events WHERE repeatid = ($1)",
-        [repeatid]
-      );
-      res.status(200).json("Repeating events successfully deleted.");
-    } else {
-      const req = await pool.query(
-        "DELETE FROM events WHERE id = ($1)",
-        [eventid]
-      );
-      res.status(200).json("Event successfully deleted.");
-    };
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
-
-router.patch("/delete-tag/:bedid", authenticate, async function(req, res, next) {
-  let { bedid }  = req.params;
-  bedid = Number(bedid);
-  let { tag } = req.body;
-  tag = tag.trim().toLowerCase();
-
-  try {
-    const pullBedTagsReq = await pool.query(
-      "SELECT eventtags FROM garden_beds WHERE id = ($1)",
-      [bedid]
-    );
-    const updatedEventTags = pullBedTagsReq.rows[0].eventtags.filter(currentTag => currentTag !== tag);
-    const updateBedTagsReq = await pool.query(
-      "UPDATE garden_beds SET eventtags = ($1) WHERE id = ($2)",
-      [updatedEventTags, bedid]
-    );
-
-    const pullBedEventsReq = await pool.query(
-      "SELECT tags, id FROM events WHERE bedid = ($1)",
-      [bedid]
-    );
-    let tagsAndEventIds = pullBedEventsReq.rows;
-    tagsAndEventIds.forEach(async event => {
-      if (event.tags.includes(tag)) {
-        const updatedEventTags = event.tags.filter(currentTag => currentTag !== tag);
-        const updateEventReq = await pool.query(
-          "UPDATE events SET tags = ($1) WHERE id = ($2)",
-          [updatedEventTags, event.id]
-        );
-      };
-    });
-    res.status(200).json("Successfully deleted tag.");
-
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
-
-/// POST ENDPOINTS ///
-router.get("/pull-posts/:bedid", authenticate, postsController.pull_posts);
-
-router.post("/add-post/:bedid", authenticate, checkSchema(postSchema, ["body"]), checkSchema(postIdSchema, ["body"]), postsController.add_post);
-
-router.patch("/update-post/:id", authenticate, checkSchema(postSchema, ["body"]), checkSchema(postIdSchema, ["params"]), postsController.update_post);
-
-router.delete("/delete-post/:id", authenticate, checkSchema(postIdSchema, ["params"]), postsController.delete_post);
-
-router.patch("/update-reactions/:table/:id", authenticate, checkSchema(updateReactionsSchema, ["params", "body"]), postsController.update_reactions);
-
-/// COMMENT ENDPOINTS ///
-router.get("/pull-comments/:postid", authenticate, checkSchema(commentPostIdSchema, ["params"]), commentsController.pull_comments);
-
-router.post("/add-comment/:postid", authenticate, checkSchema(commentPostIdSchema, ["params"]), checkSchema(commentContentSchema, ["body"]), checkSchema(commentIdSchema, ["body"]), commentsController.add_comment);
-
-router.patch("/update-comment/:id", authenticate, checkSchema(commentIdSchema, ["params"]), checkSchema(commentContentSchema, ["body"]), commentsController.update_comment);
-
-router.delete("/delete-comment/:id", authenticate, checkSchema(commentIdSchema, ["params"]), commentsController.delete_comment);
-
-/// MISC ENDPOINTS ///
 router.get("/pull-weather/:latitude/:longitude", authenticate, async function(req, res, next) {
   const { latitude, longitude } = req.params;
   
