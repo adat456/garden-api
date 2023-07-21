@@ -9,11 +9,23 @@ const pool = new Pool({
 });
 
 exports.save_veg_data = async function(req, res, next) {
-    const { returning } = req.params;
-    for (let prop in req.body) {
-      if (typeof prop === "string") prop = prop.trim();
+    const validationResults = validationResult(req);
+    console.log(validationResults);
+    if (!validationResults.isEmpty()) {
+        const errMsgs = validationResults.formatWith(error => error.msg);
+        const errMsgsArr = errMsgs.array();
+        console.log(errMsgsArr);
+        res.status(400).json(errMsgsArr);
+        return;
     };
-    const { name, description, hardiness, water, light, growthConditionsArr, lifecycle, plantingSzn, sowingMethodArr, depth, spacingArr, growthHabitArr, dtmArr, heightArr, fruitSize, privateData } = req.body;
+    const validatedData = matchedData(req, {
+      includeOptionals: true,
+    });
+    const { name, description, depth, fruitSize, growthConditions: growthConditionsArr, sowingMethod: sowingMethodArr, growthHabit: growthHabitArr, spacingArr, dtmArr, heightArr } = validatedData;
+    
+    const { returning } = req.params;
+
+    const { hardiness, water, light, lifecycle, plantingSzn, privateData } = req.body;
   
     try {
        const addNewVegReq = await pool.query(
@@ -40,12 +52,24 @@ exports.save_veg_data = async function(req, res, next) {
 };
 
 exports.update_veg_data = async function(req, res, next) {
+    const validationResults = validationResult(req);
+    console.log(validationResults);
+    if (!validationResults.isEmpty()) {
+        const errMsgs = validationResults.formatWith(error => error.msg);
+        const errMsgsArr = errMsgs.array();
+        console.log(errMsgsArr);
+        res.status(400).json(errMsgsArr);
+        return;
+    };
+    const validatedData = matchedData(req, {
+      includeOptionals: true,
+    });
+    const { name, description, depth, fruitSize, growthConditions: growthConditionsArr, sowingMethod: sowingMethodArr, growthHabit: growthHabitArr, spacingArr, dtmArr, heightArr } = validatedData;
+    
     let { vegid } = req.params;
     vegid = Number(vegid);
-    for (let prop in req.body) {
-      if (typeof prop === "string") prop = prop.trim();
-    };
-    const { name, description, hardiness, water, light, growthConditionsArr, lifecycle, plantingSzn, sowingMethodArr, depth, spacingArr, growthHabitArr, dtmArr, heightArr, fruitSize, privateData } = req.body;
+
+    const { hardiness, water, light, lifecycle, plantingSzn, privateData } = req.body;
   
     try {
        const updateVegReq = await pool.query(

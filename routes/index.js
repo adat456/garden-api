@@ -7,7 +7,8 @@ const jwt = require("jsonwebtoken");
 const redis = require("redis");
 
 const { checkSchema } = require("express-validator");
-const { bedNameSchema, rolesSchema } = require ('../schemas/bedSchemas');
+const { bedNameSchema, rolesSchema } = require ("../schemas/bedSchemas");
+const { vegSchema } = require("../schemas/vegSchemas")
 const bedController = require("../controllers/bedController");
 const vegController = require("../controllers/vegController");
 
@@ -103,9 +104,9 @@ router.patch("/update-members/:bedid", authenticate, bedController.update_member
 router.delete("/delete-bed/:bedid", authenticate, bedController.delete_bed);
 
 /// VEG DATA ENDPOINTS ///
-router.post("/save-veg-data/:returning", authenticate, vegController.save_veg_data);
+router.post("/save-veg-data/:returning", authenticate, checkSchema(vegSchema, ["body"]), vegController.save_veg_data);
 
-router.patch("/update-veg-data/:vegid", authenticate, vegController.update_veg_data);
+router.patch("/update-veg-data/:vegid", authenticate, checkSchema(vegSchema, ["body"]), vegController.update_veg_data);
 
 
 /// MISC /// 
