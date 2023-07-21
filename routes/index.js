@@ -8,9 +8,13 @@ const redis = require("redis");
 
 const { checkSchema } = require("express-validator");
 const { bedNameSchema, rolesSchema } = require ("../schemas/bedSchemas");
-const { vegSchema } = require("../schemas/vegSchemas")
+const { vegSchema } = require("../schemas/vegSchemas");
+const { postSchema, postIdSchema, updateReactionsSchema } = require("../schemas/postSchemas");
+const { commentPostIdSchema, commentContentSchema, commentIdSchema } = require("../schemas/commentSchemas");
 const bedController = require("../controllers/bedController");
 const vegController = require("../controllers/vegController");
+const postsController = require("../controllers/postsController");
+const commentsController = require("../controllers/commentsController");
 
 const pool = new Pool({
   user: process.env.PSQL_USER,
@@ -36,8 +40,7 @@ let redisClient = null;
 
 async function authenticate(req, res, next) {
   const token = req.cookies.jwt;
-  console.log(token);
-
+  
   try {
     if (token) {
       const onBlacklist = await redisClient.get(`blacklist_${token}`);
@@ -487,241 +490,27 @@ router.patch("/delete-tag/:bedid", authenticate, async function(req, res, next) 
   };
 });
 
-router.get("/pull-posts/:bedid", authenticate, async function(req, res, next) {
-  let { bedid } = req.params;
-  bedid = Number(bedid);
+/// POST ENDPOINTS ///
+router.get("/pull-posts/:bedid", authenticate, postsController.pull_posts);
 
-  try {
-    const pullPosts = await pool.query(
-      "SELECT * FROM posts WHERE bedid = ($1) ORDER BY posted DESC",
-      [bedid]
-    );
-    const pinnedPostsToTheFrontArr = [];
-    pullPosts.rows.forEach(post => {
-      if (post.pinned) pinnedPostsToTheFrontArr.unshift(post);
-      if (!post.pinned) pinnedPostsToTheFrontArr.push(post);
-    });
-    console.log(pinnedPostsToTheFrontArr);
-    res.status(200).json(pinnedPostsToTheFrontArr);
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
+router.post("/add-post/:bedid", authenticate, checkSchema(postSchema, ["body"]), checkSchema(postIdSchema, ["body"]), postsController.add_post);
 
-router.post("/add-post/:bedid", authenticate, async function (req, res, next) {
-  let { bedid } = req.params;
-  bedid = Number(bedid);
-  let { title, content, pinned, id } = req.body;
-  title = title.trim();
-  content = content.trim();
-  const posted = new Date().toISOString().slice(0, 10);
+router.patch("/update-post/:id", authenticate, checkSchema(postSchema, ["body"]), checkSchema(postIdSchema, ["params"]), postsController.update_post);
 
-  try {
-    const addPost = await pool.query(
-      "INSERT INTO posts (bedid, authorid, authorname, authorusername, posted, edited, title, content, likes, dislikes, pinned, id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
-      [bedid, res.locals.user.id, `${res.locals.user.firstname} ${res.locals.user.lastname}`, res.locals.username, posted, null, title, content, [], [], pinned, id]
-    );
-    res.status(200).json("Successfully added a post.");
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
+router.delete("/delete-post/:id", authenticate, checkSchema(postIdSchema, ["params"]), postsController.delete_post);
 
-router.patch("/update-post/:id", authenticate, async function(req, res, next) {
-  const { id } = req.params;
-  let { title, content, pinned } = req.body;
-  title = title.trim();
-  content = content.trim();
-  const edited = new Date().toISOString().slice(0, 10);
+router.patch("/update-reactions/:table/:id", authenticate, checkSchema(updateReactionsSchema, ["params", "body"]), postsController.update_reactions);
 
-  try {
-    const getPostReq = await pool.query(
-      "SELECT * FROM posts WHERE id = ($1)",
-      [id]
-    );
-    const postAuthorUsername = getPostReq.rows[0].authorusername;
-    if (postAuthorUsername === res.locals.username) {
-      const updatePostReq = await pool.query(
-        "UPDATE posts SET title = ($1), content = ($2), edited = ($3), pinned = ($4) WHERE id = ($5)",
-        [title, content, edited, pinned, id]
-      );
-      res.status(200).json("Post successfully updated.");
-    } else {
-      throw new Error("You do not have permission to edit this post as you are not the original author.");
-    };
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
+/// COMMENT ENDPOINTS ///
+router.get("/pull-comments/:postid", authenticate, checkSchema(commentPostIdSchema, ["params"]), commentsController.pull_comments);
 
-router.delete("/delete-post/:id", authenticate, async function(req, res, next) {
-  const { id } = req.params;
+router.post("/add-comment/:postid", authenticate, checkSchema(commentPostIdSchema, ["params"]), checkSchema(commentContentSchema, ["body"]), checkSchema(commentIdSchema, ["body"]), commentsController.add_comment);
 
-  try {
-    const getPostReq = await pool.query(
-      "SELECT * FROM posts WHERE id = ($1)",
-      [id]
-    );
-    const postAuthorUsername = getPostReq.rows[0].authorusername;
-    if (postAuthorUsername === res.locals.username) {
-      const deletePostReq = await pool.query(
-        "DELETE FROM posts WHERE id = ($1)",
-        [id]
-      );
-      res.status(200).json("Post successfully deleted.");
-    } else {
-      throw new Error("You do not have permission to delete this post as you are not the original author.");
-    };
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
+router.patch("/update-comment/:id", authenticate, checkSchema(commentIdSchema, ["params"]), checkSchema(commentContentSchema, ["body"]), commentsController.update_comment);
 
-router.patch("/update-reactions/:table/:id", authenticate, async function(req, res, next) {
-  const { table, id } = req.params;
-  const { likes, dislikes } = req.body;
-  try {
-    if (likes) {
-      if (table === "posts") {
-        const updateLikesReq = await pool.query(
-          "UPDATE posts SET likes = ($1) WHERE id = ($2)",
-          [likes, id]
-        );
-      } else if (table === "comments") {
-        const updateLikesReq = await pool.query(
-          "UPDATE comments SET likes = ($1) WHERE id = ($2)",
-          [likes, id]
-        );
-      };
-    };
-    if (dislikes) {
-      if (table === "posts") {
-        const updateDislikesReq = await pool.query(
-          "UPDATE posts SET dislikes = ($1) WHERE id = ($2)",
-          [dislikes, id]
-        );
-      } else if (table === "comments") {
-        const updateDislikesReq = await pool.query(
-          "UPDATE comments SET dislikes = ($1) WHERE id = ($2)",
-          [dislikes, id]
-        );
-      }; 
-    };
-    res.status(200).json("Reactions successfully updated");
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
+router.delete("/delete-comment/:id", authenticate, checkSchema(commentIdSchema, ["params"]), commentsController.delete_comment);
 
-router.get("/pull-comments/:id", authenticate, async function(req, res, next) {
-  const { id } = req.params;
-
-  async function pullComments(id, level, arr) {
-    try {
-      const pullCommentsReq = await pool.query(
-        "SELECT * FROM comments WHERE postid = ($1)",
-        [id]
-      );
-      if (pullCommentsReq.rowCount === 0) return;
-      if (pullCommentsReq.rowCount > 0) {
-        for (const comment of pullCommentsReq.rows) {
-          comment.level = level;
-          arr.push(comment);
-          await pullComments(comment.id, level + 1, arr);
-        };
-      } else {
-        throw new Error(res);
-      };
-    } catch(err) {
-        console.error("Unable to pull comments: ", err.message);
-    };
-  };
-
-  try {
-    let finalCommentTree = [];
-    let level = 0;
-    await pullComments(id, level, finalCommentTree);
-    res.status(200).json(finalCommentTree);
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
-
-router.post("/add-comment/:postid", authenticate, async function(req, res, next) {
-  const { postid } = req.params;
-  let { id, content } = req.body;
-  content = content.trim();
-  const posted = new Date().toISOString().slice(0, 10);
-
-  try {
-    const addCommentReq = await pool.query(
-      "INSERT INTO comments (id, postid, authorid, authorname, authorusername, posted, edited, content, likes, dislikes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
-      [id, postid, res.locals.user.id, `${res.locals.user.firstname} ${res.locals.user.lastname}`, res.locals.username, posted, null, content, [], []]
-    )
-    res.status(200).json("Added comment.");
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
-
-router.patch("/update-comment/:id", authenticate, async function(req, res, next) {
-  const { id } = req.params;
-  let { content } = req.body;
-  content = content.trim();
-  const edited = new Date().toISOString().slice(0, 10);
-
-  try {
-    const getCommentReq = await pool.query(
-      "SELECT * FROM comments WHERE id = ($1)",
-      [id]
-    );
-    const commentAuthorUsername = getCommentReq.rows[0].authorusername;
-    if (commentAuthorUsername === res.locals.username) {
-      const updateCommentReq = await pool.query(
-        "UPDATE comments SET content = ($1), edited = ($2) WHERE id = ($3)",
-        [content, edited, id]
-      );
-      res.status(200).json("Comment successfully updated.");
-    } else {
-      throw new Error("You do not have permission to edit this comment as you are not the original author.");
-    };
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
-
-router.delete("/delete-comment/:id", authenticate, async function(req, res, next) {
-  const { id } = req.params;
-
-  try {
-    const getCommentReq = await pool.query(
-      "SELECT * FROM comments WHERE id = ($1)",
-      [id]
-    );
-    const commentAuthorUsername = getCommentReq.rows[0].authorusername;
-    if (commentAuthorUsername === res.locals.username) {
-      const deleteCommentReq = await pool.query(
-        "DELETE FROM comments WHERE id = ($1)",
-        [id]
-      );
-      res.status(200).json("Comment successfully deleted.");
-    } else {
-      throw new Error("You do not have permission to delete this comment as you are not the original author.");
-    };
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
-
+/// MISC ENDPOINTS ///
 router.get("/pull-weather/:latitude/:longitude", authenticate, async function(req, res, next) {
   const { latitude, longitude } = req.params;
   

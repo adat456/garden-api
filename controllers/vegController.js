@@ -10,12 +10,10 @@ const pool = new Pool({
 
 exports.save_veg_data = async function(req, res, next) {
     const validationResults = validationResult(req);
-    console.log(validationResults);
     if (!validationResults.isEmpty()) {
-        const errMsgs = validationResults.formatWith(error => error.msg);
-        const errMsgsArr = errMsgs.array();
-        console.log(errMsgsArr);
-        res.status(400).json(errMsgsArr);
+        const errMsgsArr = validationResults.array();
+        const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
+        res.status(400).json(trimmedErrMsgsArr);
         return;
     };
     const validatedData = matchedData(req, {
@@ -53,17 +51,16 @@ exports.save_veg_data = async function(req, res, next) {
 
 exports.update_veg_data = async function(req, res, next) {
     const validationResults = validationResult(req);
-    console.log(validationResults);
     if (!validationResults.isEmpty()) {
-        const errMsgs = validationResults.formatWith(error => error.msg);
-        const errMsgsArr = errMsgs.array();
-        console.log(errMsgsArr);
-        res.status(400).json(errMsgsArr);
+        const errMsgsArr = validationResults.array();
+        const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
+        res.status(400).json(trimmedErrMsgsArr);
         return;
     };
     const validatedData = matchedData(req, {
       includeOptionals: true,
     });
+    console.log(validatedData);
     const { name, description, depth, fruitSize, growthConditions: growthConditionsArr, sowingMethod: sowingMethodArr, growthHabit: growthHabitArr, spacingArr, dtmArr, heightArr } = validatedData;
     
     let { vegid } = req.params;

@@ -7,6 +7,28 @@ const pool = new Pool({
     host: "localhost",
 });
 
+async function checkNoDuplicateBedName(value) {
+    const duplicateBedName = await pool.query(
+        "SELECT name FROM garden_beds WHERE name ~* ($1)",
+        [value]
+    );
+    if (duplicateBedName.rowCount > 0) throw new Error ("Garden bed name must be unique.");
+};
+
+function checkNoDuplicateTitleName(value, {req}) {
+    const allRoles = req.body;
+    let ding = 0;
+    allRoles.forEach(role => {
+        if (role.title.toLowerCase() === value.toLowerCase()) ding += 1;
+    });
+    // greater than 1, not 0, because this title is already included in req.body
+    if (ding > 1) {
+        return false;
+    } else {
+        return true;
+    };
+};
+
 exports.bedNameSchema = {
     name: {
         optional: false,
@@ -40,26 +62,4 @@ exports.rolesSchema = {
     '**.value' : {
         trim: true,
     },
-};
-
-async function checkNoDuplicateBedName(value) {
-    const duplicateBedName = await pool.query(
-        "SELECT name FROM garden_beds WHERE name ~* ($1)",
-        [value]
-    );
-    if (duplicateBedName.rowCount > 0) throw new Error ("Garden bed name must be unique.");
-};
-
-function checkNoDuplicateTitleName(value, {req}) {
-    const allRoles = req.body;
-    let ding = 0;
-    allRoles.forEach(role => {
-        if (role.title.toLowerCase() === value.toLowerCase()) ding += 1;
-    });
-    // greater than 1, not 0, because this title is already included in req.body
-    if (ding > 1) {
-        return false;
-    } else {
-        return true;
-    };
 };

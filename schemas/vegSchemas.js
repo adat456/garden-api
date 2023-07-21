@@ -1,12 +1,3 @@
-const { Pool } = require("pg");
-const pool = new Pool({
-    user: process.env.PSQL_USER,
-    database: "garden_data",
-    password: process.env.PSQL_PASSWORD,
-    port: process.env.PSQL_PORT,
-    host: "localhost",
-});
-
 function convertCommaStringToArr(value) {
     if (value) {
         const arr = value.split(",");
@@ -29,8 +20,8 @@ exports.vegSchema = {
         optional: true,
         trim: true,
         isLength: {
-            options: { max: 500 },
-            errorMessage: "Plant description may not exceed 500 characters."
+            options: { max: 250 },
+            errorMessage: "Plant description may not exceed 250 characters."
         },
     },
     depth: {
@@ -83,23 +74,23 @@ exports.vegSchema = {
 
     'spacingArr.*': {
         optional: true,
-        trim: true,
         isInt: {
-            errorMessage: "Seed spacing must be an integer/numeric value."
+            options: { min: 0 },
+            errorMessage: "Seed spacing must be an integer/numeric value greater than or equal to 0."
         }
     },
     'dtmArr.*': {
         optional: true,
-        trim: true,
         isInt: {
-            errorMessage: "Days to maturity must be an integer/numeric value."
+            options: { min: 0 },
+            errorMessage: "Days to maturity must be an integer/numeric value greater than or equal to 0."
         }
     },
     'heightArr.*': {
         optional: true,
-        trim: true,
         isInt: {
-            errorMessage: "Height must be an integer/numeric value."
+            options: { min: 0 },
+            errorMessage: "Height must be an integer/numeric value greater than or equal to 0."
         }
     }
 };

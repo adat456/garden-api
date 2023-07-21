@@ -31,10 +31,10 @@ exports.pull_beds_data = async function(req, res, next) {
 exports.create_bed = async function(req, res, next) {
     const validationResults = validationResult(req);
     if (!validationResults.isEmpty()) {
-        const errMsgs = validationResults.formatWith(error => error.msg);
-        const errMsgsArr = errMsgs.array();
-        res.status(400).json(errMsgsArr);
-        return;
+      const errMsgsArr = validationResults.array();
+      const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
+      res.status(400).json(trimmedErrMsgsArr);
+      return;
     };
     const validatedData = matchedData(req);
     const name = validatedData.name;
@@ -60,10 +60,10 @@ exports.create_bed = async function(req, res, next) {
 exports.update_bed = async function(req, res, next) {
     const validationResults = validationResult(req);
     if (!validationResults.isEmpty()) {
-        const errMsgs = validationResults.formatWith(error => error.msg);
-        const errMsgsArr = errMsgs.array();
-        res.status(400).json(errMsgsArr);
-        return;
+      const errMsgsArr = validationResults.array();
+      const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
+      res.status(400).json(trimmedErrMsgsArr);
+      return;
     };
     const validatedData = matchedData(req);
     const name = validatedData.name;
@@ -106,10 +106,10 @@ exports.update_gridmap = async function(req, res, next) {
 exports.update_roles = async function(req, res, next) {
   const validationResults = validationResult(req);
   if (!validationResults.isEmpty()) {
-      const errMsgs = validationResults.formatWith(error => error.msg);
-      const errMsgsArr = errMsgs.array();
-      res.status(400).json(errMsgsArr);
-      return;
+    const errMsgsArr = validationResults.array();
+    const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
+    res.status(400).json(trimmedErrMsgsArr);
+    return;
   };
 
   const validatedData = matchedData(req);
