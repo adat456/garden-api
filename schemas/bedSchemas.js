@@ -58,8 +58,88 @@ exports.rolesSchema = {
     },
     '**.id': {
         optional: false,
+        notEmpty: {
+            errorMessage: "All roles and their duties must have an id."
+        },
     },
     '**.value' : {
         trim: true,
+        isLength: {
+            options: { min: 1, max: 75 },
+            errorMessage: "Duty description must be between 1 and 75 characters in length."
+        }
+    },
+};
+
+exports.toggleLikesSchema = {
+    bedid: {
+        trim: true,
+        isInt: {
+            errorMessage: "A numeric bed ID must be provided.",
+        },
+        toInt: true,
+    },
+};
+
+exports.copyBedSchema = {
+    numCopies: {
+        optional: false,
+        isArray: {
+            errorMessage: "The number of copies must be an array of user IDs."
+        },
+    },
+    'numCopies.*': {
+        optional: false,
+        isInt: {
+            errorMessage: "All user IDs must be an integer/numeric value."
+        },
+        toInt: true,
+    },
+    created: {
+        trim: true,
+        isISO8601: {
+            errorMessage: "Date of board creation must be formatted YYYY-MM-DD."
+        },
+    },
+    bed: {},
+    'bed.whole': {
+        isBoolean: {
+            errorMessage: "Garden bed whole status must be a boolean value."
+        },
+        toBoolean: true,
+    },
+    'bed.length': {
+        isInt: {
+            errorMessage: "Bed length must be an integer/numeric value."
+        },
+        toInt: true,
+    },
+    'bed.width': {
+        isInt: {
+            errorMessage: "Bed width must be an integer/numeric value."
+        },
+        toInt: true,
+    },
+    'bed.name': {
+        trim: true,
+        notEmpty: {
+            errorMessage: "Garden bed must have a name in order to be copied."
+        },
+    },
+    'bed.gridmap': {
+        notEmpty: {
+            errorMessage: "Garden bed must have a gridmap in order to be copied."
+        },
+    },
+    'bed.seedbasket': {
+        notEmpty: {
+            errorMessage: "Garden bed must have a seed basket in order to be copied."
+        },
+    },
+    'bed.id': {
+        isInt: {
+            errorMessage: "Bed ID must be an integer/numeric value."
+        },
+        toInt: true,
     },
 };

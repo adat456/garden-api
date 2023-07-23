@@ -46,7 +46,7 @@ exports.create_bed = async function(req, res, next) {
       // create the new bed and retrive its id
       const addNewBedReq = await pool.query(
         "INSERT INTO garden_beds (hardiness, sunlight, soil, whole, length, width, gridMap, name, public, created, username, numhearts, numcopies, seedbasket, members, roles, eventtags) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *",
-        [hardiness, sunlight, soil, whole, length, width, gridmapJSON, name, public, created, res.locals.username, 0, 0, JSON.stringify([]), JSON.stringify([]), JSON.stringify([]), []]
+        [hardiness, sunlight, soil, whole, length, width, gridmapJSON, name, public, created, res.locals.username, [], [], JSON.stringify([]), JSON.stringify([]), JSON.stringify([]), []]
       );
       const newBoard = addNewBedReq.rows[0];
   
@@ -175,6 +175,79 @@ exports.pull_all_public_beds = async function(req, res, next) {
       [true, res.locals.username]
     );
     res.status(200).json(recentPublicBedsReq.rows);
+  } catch(err) {
+    console.log(err.message);
+    res.status(400).json(err.message);
+  };
+};
+
+exports.toggle_bed_favorites = async function(req, res, next) {
+  const validationResults = validationResult(req);
+  if (!validationResults.isEmpty()) {
+    const errMsgsArr = validationResults.array();
+    const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
+    res.status(400).json(trimmedErrMsgsArr);
+    return;
+  };
+  const { bedid } = matchedData(req);
+
+  try {
+    // get array of existing user IDs in the numhearts arr
+    const getNumHearts = await pool.query(
+      "SELECT numhearts FROM garden_beds WHERE id = ($1)",
+      [bedid]
+    );
+    let numHearts = [...getNumHearts.rows[0].numhearts];
+    
+    // check if it includes the current user's id and remove or add accordingly
+    if (numHearts.includes(res.locals.user.id)) {
+      numHearts = numHearts.filter(user => user != res.locals.user.id);
+    } else {
+      numHearts = [...numHearts, res.locals.user.id];
+    };
+
+    // update numhearts in that bed 
+    const updateNumHearts = await pool.query(
+      "UPDATE garden_beds SET numhearts = ($1) WHERE id = ($2)",
+      [numHearts, bedid]
+    );
+
+    res.status(200).json(numHearts);
+  } catch(err) {
+    console.log(err.message);
+    res.status(400).json(err.message);
+  };
+};
+
+exports.copy_bed = async function(req, res, next) {
+  const { numCopies, bed, created } = req.body;
+
+  const { whole, length, width, gridmap, name, seedbasket, id } = bed;
+  const gridmapJSON = JSON.stringify(gridmap);
+  const seedbasketJSON = JSON.stringify(seedbasket);
+
+  try {
+    // get the copy version number by calculating how many IDs in the numCopies array are the user's ID
+    const copyVersionNumber = numCopies.reduce((total, userid) => {
+      if (userid === res.locals.user.id) {
+        return total + 1;
+      } else {
+        return total;
+      };
+    }, 1);
+    const copyBedReq = await pool.query(
+      "INSERT INTO garden_beds (hardiness, sunlight, soil, whole, length, width, gridMap, name, public, created, username, numhearts, numcopies, seedbasket, members, roles, eventtags) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)",
+      [undefined, "", [], whole, length, width, gridmapJSON, `Copy ${copyVersionNumber} of ${name}`, false, created, res.locals.username, [], [], seedbasketJSON, JSON.stringify([]), JSON.stringify([]), []]
+    );
+
+    // also add user's id to the numCopies of the copied bed
+    const updatedNumCopies = [...numCopies, res.locals.user.id];
+    const incrementNumCopies = await pool.query(
+      "UPDATE garden_beds SET numcopies = ($1) WHERE id = ($2)",
+      [updatedNumCopies, id]
+    );
+
+    res.status(200).json(updatedNumCopies);
   } catch(err) {
     console.log(err.message);
     res.status(400).json(err.message);

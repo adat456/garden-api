@@ -1,19 +1,23 @@
 var express = require('express');
 var router = express.Router();
 require("dotenv").config();
-
 const { Pool } = require("pg");
 const jwt = require("jsonwebtoken");
 const redis = require("redis");
-
 const { checkSchema } = require("express-validator");
-const { bedNameSchema, rolesSchema } = require ("../schemas/bedSchemas");
-const { vegSchema } = require("../schemas/vegSchemas");
+
+const { findUsersSchema } = require("../schemas/userSchema");
+const { bedNameSchema, rolesSchema, toggleLikesSchema, copyBedSchema } = require ("../schemas/bedSchemas");
+const { vegSchema, searchVegSchema } = require("../schemas/vegSchemas");
+const { notificationIdSchema, updateNotificationSchema, addNotificationSchema } = require("../schemas/notificationSchema");
 const { eventBedIdSchema, addEventSchema, deleteEventSchema } = require("../schemas/eventSchemas");
 const { postSchema, postIdSchema, updateReactionsSchema } = require("../schemas/postSchemas");
 const { commentPostIdSchema, commentContentSchema, commentIdSchema } = require("../schemas/commentSchemas");
+
+const userController = require("../controllers/userController");
 const bedController = require("../controllers/bedController");
 const vegController = require("../controllers/vegController");
+const notificationsController = require("../controllers/notificationsController");
 const eventsController = require("../controllers/eventsController");
 const postsController = require("../controllers/postsController");
 const commentsController = require("../controllers/commentsController");
@@ -77,23 +81,14 @@ async function authenticate(req, res, next) {
   };
 };
 
-// should return everything except for the password
-router.get("/pull-user-data", authenticate, async function(req, res, next) {
-  try {
-    const getUserDataReq = await pool.query(
-      "SELECT id, firstname, lastname, email, username, board_ids, added_veg_data, favorited_beds, copied_beds FROM users WHERE username = ($1)",
-      [res.locals.username]
-    );
-    res.status(200).json(getUserDataReq.rows[0]);
-  } catch(err) {
-    console.log(err.message);
-    res.status(400).json(err.message);
-  };
-});
+
+/// USER ENDPOINTS ///
+router.get("/find-users/:searchTerm", authenticate, checkSchema(findUsersSchema, ["params"]), userController.find_users);
+
+router.get("/pull-user-data", authenticate, userController.pull_user_data);
+
 
 /// GARDEN BED ENDPOINTS ///
-router.get("/all-public-beds", authenticate, bedController.pull_all_public_beds);
-
 router.get("/pull-beds-data", authenticate, bedController.pull_beds_data);
 
 router.post("/create-bed", authenticate, checkSchema(bedNameSchema, ["body"]), bedController.create_bed);
@@ -108,122 +103,34 @@ router.patch("/update-members/:bedid", authenticate, bedController.update_member
 
 router.delete("/delete-bed/:bedid", authenticate, bedController.delete_bed);
 
+
+/// PUBLIC BED ENDPOINTS ///
+router.get("/all-public-beds", authenticate, bedController.pull_all_public_beds);
+
+router.patch("/toggle-bed-favorites/:bedid", authenticate, checkSchema(toggleLikesSchema, ["params"]), bedController.toggle_bed_favorites);
+
+router.post("/copy-bed", authenticate, checkSchema(copyBedSchema, ["body"]), bedController.copy_bed);
+
+
 /// VEG DATA ENDPOINTS ///
 router.post("/save-veg-data/:returning", authenticate, checkSchema(vegSchema, ["body"]), vegController.save_veg_data);
 
 router.patch("/update-veg-data/:vegid", authenticate, checkSchema(vegSchema, ["body"]), vegController.update_veg_data);
 
-//////// NOTIFICATIONS ////////////////////
+router.get("/search/:term", authenticate, checkSchema(searchVegSchema, ["params"]), vegController.search_veg_data);
 
-router.get("/pull-notifications", authenticate, async function(req, res, next) {
-  try {
-    const notificationsReq = await pool.query(
-      "SELECT * FROM notifications WHERE recipientid = ($1)",
-      [res.locals.user.id]
-    );
-    res.status(200).json(notificationsReq.rows);
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
+router.get("/pull-seed-contributions", authenticate, vegController.pull_seed_contributions);
 
-router.post("/add-notification", authenticate, async function(req, res, next) {
-  let { senderid, sendername, senderusername, recipientid, message, dispatched, type, bedid, eventid } = req.body;                     
 
-  try {
-    const addNotificationReq = await pool.query(
-      "INSERT INTO notifications (senderid, sendername, senderusername, recipientid, message, dispatched, read, responded, type, bedid, eventid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
-      [senderid, sendername, senderusername, recipientid, message, dispatched, false, false, type, bedid, eventid]
-    );
+/// NOTIFICATION ENDPOINTS ///
+router.get("/pull-notifications", authenticate, notificationsController.pull_notifications);
 
-    // notifies recipient via socket of the type of notification, which will then prompt manual refetching of notifications AND certain data when applicable
-    req.io.emit(`notifications-${recipientid}`, type);
+router.post("/add-notification", authenticate, checkSchema(addNotificationSchema, ["body"]), notificationsController.add_notification);
 
-    // adding member to bed upon confirmation
-    if (type === "memberconfirmation" && bedid) {
-      const bedMembersReq = await pool.query(
-        "SELECT members FROM garden_beds WHERE id = ($1)",
-        [bedid]
-      );
-      let members = bedMembersReq.rows[0].members;
-      members = members.map(member => {
-        if (member.id !== senderid) {
-          return member;
-        } else {
-          const date = new Date().toString();
-          return {...member, status: "accepted", finaldate: date};
-        };
-      });
-      members = JSON.stringify(members);
+router.patch("/update-notification/:notifid", authenticate, checkSchema(notificationIdSchema, ["params"]), checkSchema(updateNotificationSchema, ["body"]), notificationsController.update_notification);
 
-      const updateBedMembersReq = await pool.query(
-        "UPDATE garden_beds SET members = ($1) WHERE id = ($2)",
-        [members, bedid]
-      );
-    };
+router.delete("/delete-notification/:notifid", authenticate, checkSchema(notificationIdSchema, ["params"]), notificationsController.delete_notification);
 
-    // adding member to rsvpsreceived in event upon confirmation
-    if (type === "rsvpconfirmation" && eventid) {
-      const eventRSVPsReceived = await pool.query(
-        "SELECT rsvpsreceived FROM events WHERE id = ($1)",
-        [eventid]
-      );
-      console.log(eventRSVPsReceived);
-      const updatedRsvps = [...eventRSVPsReceived.rows[0].rsvpsreceived, senderid];
-      const updateRSVPs = await pool.query(
-        "UPDATE events SET rsvpsreceived = ($1) WHERE id = ($2)",
-        [updatedRsvps, eventid]
-      );
-    };
-
-    res.status(200).json("Notification successfully added.");
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
-
-router.patch("/update-notification/:notifid", authenticate, async function(req, res, next) {
-  let { notifid } = req.params;
-  notifid = Number(notifid);
-  const { read, responded } = req.body;
-  
-  try {
-    // read will always be part of req.body, whether true or false
-    const req = await pool.query(
-      "UPDATE notifications SET read = ($1) WHERE id = ($2)",
-      [read, notifid]
-    );
-    // responded will only be included if true
-    if (responded) {
-      const req = await pool.query(
-        "UPDATE notifications SET responded = ($1) WHERE id = ($2)",
-        [responded, notifid]
-      );
-    };
-    res.status(200).json("Notification successfully updated.")
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
-
-router.delete("/delete-notification/:notifid", authenticate, async function(req, res, next) {
-  let { notifid } = req.params;
-  notifid = Number(notifid);
-  
-  try {
-    const req = await pool.query(
-      "DELETE FROM notifications WHERE id = ($1)",
-      [notifid]
-    );
-    res.status(200).json("Notification successfully deleted.")
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
 
 /// EVENT ENDPOINTS /// 
 router.get("/pull-events/:bedid", authenticate, checkSchema(eventBedIdSchema, ["params"]), eventsController.pull_events);
@@ -233,6 +140,7 @@ router.post("/add-event/:bedid", authenticate, checkSchema(eventBedIdSchema, ["p
 router.delete("/delete-event/:eventid/:repeatid", authenticate, checkSchema(deleteEventSchema, ["params"]), eventsController.delete_event);
 
 router.patch("/delete-tag/:bedid", authenticate, eventsController.delete_tag);
+
 
 /// POST ENDPOINTS ///
 router.get("/pull-posts/:bedid", authenticate, postsController.pull_posts);
@@ -245,6 +153,7 @@ router.delete("/delete-post/:id", authenticate, checkSchema(postIdSchema, ["para
 
 router.patch("/update-reactions/:table/:id", authenticate, checkSchema(updateReactionsSchema, ["params", "body"]), postsController.update_reactions);
 
+
 /// COMMENT ENDPOINTS ///
 router.get("/pull-comments/:postid", authenticate, checkSchema(commentPostIdSchema, ["params"]), commentsController.pull_comments);
 
@@ -254,30 +163,8 @@ router.patch("/update-comment/:id", authenticate, checkSchema(commentIdSchema, [
 
 router.delete("/delete-comment/:id", authenticate, checkSchema(commentIdSchema, ["params"]), commentsController.delete_comment);
 
-/// MISC ENDPOINTS ///
-router.get("/search/:term", authenticate, async function(req, res, next) {
-  const spacedTerm = req.params.term.replace(/-/g, " ");
-  
-  try {
-      const edenReq = await pool.query(
-        "SELECT * FROM veg_data_eden WHERE name ~* ($1)",
-        [spacedTerm]
-      );
-      const userAddedPublicReq = await pool.query(
-        "SELECT * FROM veg_data_users WHERE name ~* ($1) AND privatedata = ($2)",
-        [spacedTerm, false]
-      );
-      const userAddedPrivateReq = await pool.query(
-        "SELECT * FROM veg_data_users WHERE name ~* ($1) AND privatedata = ($2) AND contributor = ($3)",
-        [spacedTerm, true, res.locals.username]
-      );
-      res.status(200).json([...edenReq.rows, ...userAddedPublicReq.rows, ...userAddedPrivateReq.rows]);
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
 
+/// MISC ENDPOINTS ///
 router.patch("/update-seed-basket/:bedid", authenticate, async function(req, res, next) {
   let { bedid } = req.params;
   bedid = Number(bedid);
@@ -296,116 +183,7 @@ router.patch("/update-seed-basket/:bedid", authenticate, async function(req, res
   };
 });
 
-router.get("/pull-seed-contributions", authenticate, async function(req, res, next) {
-  try {
-    const pullSeedContributionsReq = await pool.query(
-      "SELECT * FROM veg_data_users WHERE contributor = ($1)",
-      [res.locals.username]
-    );
-    res.status(200).json(pullSeedContributionsReq.rows);
-  } catch(err) {
-    console.log(err.message);
-    res.status(404).json(err.message);
-  };
-});
 
-router.post("/toggle-bed-favorites", authenticate, async function(req, res, next) {
-  let { id } = req.body;
-  id = Number(id);
-
-  try {
-    // get array of favorited boards
-    const getUsersFavoritesReq = await pool.query(
-      "SELECT favorited_beds FROM users WHERE username = ($1)",
-      [res.locals.username]
-    );
-    let favoritedBeds = [...getUsersFavoritesReq.rows[0].favorited_beds];
-    
-    // if it does not include the current id, add it and increment numhearts in the respective board, otherwise...
-    if (favoritedBeds.includes(id)) {
-      favoritedBeds = favoritedBeds.filter(bed => bed != id);
-      const decrementNumHeartsReq = await pool.query(
-        "UPDATE garden_beds SET numhearts = numhearts - 1 WHERE id = ($1)",
-        [id]
-      );
-    } else {
-      favoritedBeds = [...favoritedBeds, id];
-      const incrementNumHeartsReq = await pool.query(
-        "UPDATE garden_beds SET numhearts = numhearts + 1 WHERE id = ($1)",
-        [id]
-      );
-    };
-
-    // update row in users with the updated favorited boards arr
-    const addToUserFavoritesReq = await pool.query(
-      "UPDATE users SET favorited_beds = ($1) WHERE username = ($2)",
-      [favoritedBeds, res.locals.username]
-    );
-
-    res.status(200).json("Toggled favorites.");
-  } catch(err) {
-    console.log(err.message);
-    res.status(400).json(err.message);
-  };
-});
-
-router.post("/copy-bed", authenticate, async function(req, res, next) {
-  const { bed, created } = req.body;
-  const { hardiness, sunlight, soil, length, width, gridmap, name, seedbasket, id } = bed;
-  const gridmapJSON = JSON.stringify(gridmap);
-  const seedbasketJSON = JSON.stringify(seedbasket);
-
-  try {
-    // create the new bed and retrieve its id
-    // need to add the extra columns
-    const addNewBedReq = await pool.query(
-      "INSERT INTO garden_beds (hardiness, sunlight, soil, length, width, gridMap, name, public, created, username, numhearts, numcopies, seedbasket) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id",
-      [hardiness, sunlight, soil, length, width, gridmapJSON, `Copy of ${name}`, false, created, res.locals.username, 0, 0, seedbasketJSON]
-    );
-    const newBoardId = addNewBedReq.rows[0].id;
-    // retrieve the user's array of board ids and add the new board ID
-    const getUserBoardsReq = await pool.query(
-      "SELECT board_ids, copied_beds FROM users WHERE username = $1",
-      [res.locals.username]
-    );
-    // update with the returned, freshly generated id
-    const boardIds = [...getUserBoardsReq.rows[0].board_ids, newBoardId];
-    // update with the old/original id of the bed that was copied (for comparison purposes when looking at boards you've already copied)
-    const copiedBedIds = [...getUserBoardsReq.rows[0].copied_beds, id];
-    // and update the user's data with this updated board id array
-    const updatedUserBoardsReq = await pool.query(
-      "UPDATE users SET board_ids = ($1), copied_beds = ($2) WHERE username = ($3)",
-      [boardIds, copiedBedIds, res.locals.username]
-    );
-
-
-    // also increment number of copies in the copied board
-    const incrementNumCopiesReq = await pool.query(
-      "UPDATE garden_beds SET numcopies = numcopies + 1 WHERE id = ($1)",
-      [id]
-    );
-
-    res.status(200).json("Bed data copied!");
-  } catch(err) {
-    console.log(err.message);
-    res.status(400).json(err.message);
-  };
-});
-
-router.get("/find-users/:searchTerm", authenticate, async function(req, res, next) {
-  const { searchTerm } = req.params;
-
-  try {
-    const findUsersReq = await pool.query(
-      "SELECT id, username, firstname, lastname FROM users WHERE username ~* ($1)",
-      [searchTerm]
-    );
-    res.status(200).json(findUsersReq.rows);
-  } catch(err) {
-    console.log(err.message);
-    res.status(400).json(err.message);
-  };
-});
 
 router.get("/pull-weather/:latitude/:longitude", authenticate, async function(req, res, next) {
   const { latitude, longitude } = req.params;
