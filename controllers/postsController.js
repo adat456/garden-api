@@ -30,17 +30,7 @@ exports.pull_posts = async function(req, res, next) {
 };
 
 exports.add_post = async function (req, res, next) {
-    const validationResults = validationResult(req);
-    if (!validationResults.isEmpty()) {
-      const errMsgsArr = validationResults.array();
-      const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
-      res.status(400).json(trimmedErrMsgsArr);
-      return;
-    };
-    const validatedData = matchedData(req, {
-      includeOptionals: true,
-    });
-    const { title, content, pinned, id } = validatedData;
+    const { title, content, pinned, id } = res.locals.validatedData;
 
     let { bedid } = req.params;
     bedid = Number(bedid);
@@ -59,18 +49,7 @@ exports.add_post = async function (req, res, next) {
 };
 
 exports.update_post = async function(req, res, next) {
-    const validationResults = validationResult(req);
-    if (!validationResults.isEmpty()) {
-        const errMsgsArr = validationResults.array();
-        const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
-        res.status(400).json(trimmedErrMsgsArr);
-        return;
-    };
-    const validatedData = matchedData(req, {
-      includeOptionals: true,
-    });
-    const { title, content, pinned, id } = validatedData;
-
+    const { title, content, pinned, id } = res.locals.validatedData;
     const edited = new Date().toLocaleDateString();
   
     try {
@@ -95,17 +74,7 @@ exports.update_post = async function(req, res, next) {
 };
 
 exports.delete_post = async function(req, res, next) {
-    const validationResults = validationResult(req);
-    if (!validationResults.isEmpty()) {
-        const errMsgsArr = validationResults.array();
-        const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
-        res.status(400).json(trimmedErrMsgsArr);
-        return;
-    };
-    const validatedData = matchedData(req, {
-      includeOptionals: true,
-    });
-    const { id } = validatedData;
+    const { id } = res.locals.validatedData;
   
     try {
       const getPostReq = await pool.query(
@@ -129,17 +98,7 @@ exports.delete_post = async function(req, res, next) {
 };
 
 exports.update_reactions = async function(req, res, next) {
-  const validationResults = validationResult(req);
-  if (!validationResults.isEmpty()) {
-      const errMsgsArr = validationResults.array();
-      const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
-      res.status(400).json(trimmedErrMsgsArr);
-      return;
-  };
-  const validatedData = matchedData(req, {
-    includeOptionals: true,
-  });
-  const { table, id, likes, dislikes } = validatedData;
+  const { table, id, likes, dislikes } = res.locals.validatedData;
 
   try {
     if (likes) {

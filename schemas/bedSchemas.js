@@ -49,11 +49,11 @@ exports.rolesSchema = {
         trim: true,
         isLength: {
             options: { min: 1, max: 25 },
-            errorMessage: "Role title must be between 1 and 25 characters in length."
+            errorMessage: "Must be 1-25 characters without whitespace."
         },
         noDuplicateRoleName: {
             custom: checkNoDuplicateTitleName,
-            errorMessage: "A role with this title already exists. Please rename this title or an existing title."
+            errorMessage: "A role with this title already exists. Rename this role title or an existing role title."
         },
     },
     '**.id': {
@@ -66,8 +66,8 @@ exports.rolesSchema = {
         trim: true,
         isLength: {
             options: { min: 1, max: 75 },
-            errorMessage: "Duty description must be between 1 and 75 characters in length."
-        }
+            errorMessage: "Must be 1-75 characters without whitespace. Remove if not needed."
+        },
     },
 };
 

@@ -9,17 +9,7 @@ const pool = new Pool({
 });
 
 exports.save_veg_data = async function(req, res, next) {
-    const validationResults = validationResult(req);
-    if (!validationResults.isEmpty()) {
-        const errMsgsArr = validationResults.array();
-        const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
-        res.status(400).json(trimmedErrMsgsArr);
-        return;
-    };
-    const validatedData = matchedData(req, {
-      includeOptionals: true,
-    });
-    const { name, description, depth, fruitSize, growthConditions: growthConditionsArr, sowingMethod: sowingMethodArr, growthHabit: growthHabitArr, spacingArr, dtmArr, heightArr } = validatedData;
+    const { name, description, depth, fruitSize, growthConditions: growthConditionsArr, sowingMethod: sowingMethodArr, growthHabit: growthHabitArr, spacingArr, dtmArr, heightArr } = res.locals.validatedData;
     
     const { returning } = req.params;
 
@@ -50,18 +40,7 @@ exports.save_veg_data = async function(req, res, next) {
 };
 
 exports.update_veg_data = async function(req, res, next) {
-    const validationResults = validationResult(req);
-    if (!validationResults.isEmpty()) {
-        const errMsgsArr = validationResults.array();
-        const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
-        res.status(400).json(trimmedErrMsgsArr);
-        return;
-    };
-    const validatedData = matchedData(req, {
-      includeOptionals: true,
-    });
-    console.log(validatedData);
-    const { name, description, depth, fruitSize, growthConditions: growthConditionsArr, sowingMethod: sowingMethodArr, growthHabit: growthHabitArr, spacingArr, dtmArr, heightArr } = validatedData;
+    const { name, description, depth, fruitSize, growthConditions: growthConditionsArr, sowingMethod: sowingMethodArr, growthHabit: growthHabitArr, spacingArr, dtmArr, heightArr } = res.locals.validatedData;
     
     let { vegid } = req.params;
     vegid = Number(vegid);
@@ -84,4 +63,40 @@ exports.update_veg_data = async function(req, res, next) {
       console.log(err.message);
       res.status(400).json(err.message);
     };
-  }
+};
+
+exports.search_veg_data = async function(req, res, next) {
+  const { term } = res.locals.validatedData;
+  
+  try {
+      const edenReq = await pool.query(
+        "SELECT * FROM veg_data_eden WHERE name ~* ($1)",
+        [term]
+      );
+      const userAddedPublicReq = await pool.query(
+        "SELECT * FROM veg_data_users WHERE name ~* ($1) AND privatedata = ($2)",
+        [term, false]
+      );
+      const userAddedPrivateReq = await pool.query(
+        "SELECT * FROM veg_data_users WHERE name ~* ($1) AND privatedata = ($2) AND contributor = ($3)",
+        [term, true, res.locals.username]
+      );
+      res.status(200).json([...edenReq.rows, ...userAddedPublicReq.rows, ...userAddedPrivateReq.rows]);
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+};
+
+exports.pull_seed_contributions = async function(req, res, next) {
+  try {
+    const pullSeedContributionsReq = await pool.query(
+      "SELECT * FROM veg_data_users WHERE contributor = ($1)",
+      [res.locals.username]
+    );
+    res.status(200).json(pullSeedContributionsReq.rows);
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+};

@@ -1,4 +1,4 @@
-const { isEqual, isAfter, isSameDay, add } = require("date-fns");
+const { isEqual, isAfter } = require("date-fns");
 const { isISO8601 } = require("validator");
 
 function isNanoIdLength(value) {
@@ -6,8 +6,25 @@ function isNanoIdLength(value) {
     return returnValue;
 };
 
+function isNanoIdLengthOrUndefined(value) {
+    if (value === "undefined") {
+        return true;
+    } else {
+        const returnValue = value.length == 21 ? true : false;
+        return returnValue;
+    };
+};
+
 function isAcceptedEventPublicValue(value) {
     if (value === "public" || value === "allmembers" || value === "somemembers") {
+        return true;
+    } else {
+        return false;
+    };
+};
+
+function isThereAtLeastOneParticipant(value) {
+    if (value.length > 0) {
         return true;
     } else {
         return false;
@@ -29,20 +46,13 @@ function isEndDateOnAfterStartDate(value) {
     };
 };
 
-function isEndTimeOnAfterStartTime(value, {req}) {
+function isEndTimeAfterStartTime(value, {req}) {
     const endTime = value;
-    const endTimeHours = Number(endTime.slice(0, 2));
-    const endTimeMinutes = Number(endTime.slice(-2));
-    const fauxEndTimeDate = new Date(2023, 1, 1, endTimeHours, endTimeMinutes)
-
     const { eventStartTime: startTime } = req.body;
-    const startTimeHours = Number(startTime.slice(0, 2));
-    const startTimeMinutes = Number(startTime.slice(-2));
-    const fauxStartTimeDate = new Date(2023, 1, 1, startTimeHours, startTimeMinutes)
 
     if (!endTime) return true;
     if (endTime) {
-        if (isEqual(fauxEndTimeDate, fauxStartTimeDate) || isAfter(fauxEndTimeDate, fauxStartTimeDate)) {
+        if (endTime > startTime) {
             return true;
         } else {
             return false;
@@ -51,7 +61,6 @@ function isEndTimeOnAfterStartTime(value, {req}) {
 };
 
 function isAcceptedRepeatEveryValue(value, {req}) {
-    if (!req.body.repeating) return true;
     if (value === "weekly" || value === "biweekly" || value === "monthly") {
         return true;
     } else {
@@ -60,17 +69,14 @@ function isAcceptedRepeatEveryValue(value, {req}) {
 };
 
 function isRepeatTillDateFormatValid(value, {req}) {
-    if (!req.body.repeating) return true;
     return (isISO8601(value));
 };
 
 function isRSVPDateFormatValid(value, {req}) {
-    if (!req.body.rsvpNeeded) return true;
     return (isISO8601(value));
 };
 
 function isRSVPDateOnAfterToday(value, {req}) {
-    if (!req.body.rsvpNeeded) return true;
     const rsvpDate = new Date(value);
     const today = new Date();
     const slicedToday = today.toISOString().slice(0, 10);
@@ -82,8 +88,6 @@ function isRSVPDateOnAfterToday(value, {req}) {
 };
 
 function isRSVPDateBeforeOnEventStartDate(value, {req}) {
-    if (!req.body.rsvpNeeded) return true;
-
     const rsvpDate = new Date(value);
     const eventStartDate = new Date(req.body.eventDate[0]);
     if (isEqual(rsvpDate, eventStartDate) || isAfter(eventStartDate, rsvpDate)) {
@@ -173,14 +177,12 @@ exports.addEventSchema = {
         isArray: {
             errorMessage: "Event participants must be described by an array of their user IDs."
         },
+        checkNumParticipants: {
+            if: (value, {req}) => req.body.eventPublic === "somemembers",
+            custom: isThereAtLeastOneParticipant,
+            errorMessage: "No participants have been invited to this event. Please add participants or change the public level of the event.",
+        },
     },
-    // 'eventParticipants.id': {
-    //     optional: true,
-    //     isInt: {
-    //         errorMessage: "Each event participant must be represented by their user ID."
-    //     },
-    //     toInt: true,
-    // },
     eventDate: {
         optional: false,
         checkEventEndDate: {
@@ -191,22 +193,24 @@ exports.addEventSchema = {
     eventStartTime: {
         optional: false,
         notEmpty: {
-            errorMessage: "Specify a start time for this event."
+            errorMessage: "Specify a start time."
         },
         isTime: {
-            errorMessage: "Time should be formatted according to a 12-hour clock."
+            if: (value) => value,
+            errorMessage: "Time should be formatted according to a 24-hour clock."
         },
     },
     eventEndTime: {
         optional: false,
         notEmpty: {
-            errorMessage: "Specify an end time for this event."
+            errorMessage: "Specify an end time."
         },
         isTime: {
-            errorMessage: "Time should be formatted according to a 12-hour clock."
+            if: (value) => value,
+            errorMessage: "Time should be formatted according to a 24-hour clock."
         },
         checkEventEndTime: {
-            custom: isEndTimeOnAfterStartTime,
+            custom: isEndTimeAfterStartTime,
             errorMessage: "The event end time must take place after the event start time."
         },
     },
@@ -221,13 +225,15 @@ exports.addEventSchema = {
         optional: true,
         trim: true,
         checkForValidRepeatEveryValue: {
+            if: (value, {body}) => body.repeating,
             custom: isAcceptedRepeatEveryValue,
-            errorMessage: "Events may only repeat on a weekly, biweekly, or monthly basis."
+            errorMessage: "Events may only repeat on a weekly, biweekly, or monthly basis. Select a repeating interval."
         },
     },
     repeatTill: {
         optional: true,
         checkForValidRepeatTillDateFormat: {
+            if: (value, {body}) => body.repeating,
             custom: isRepeatTillDateFormatValid,
             errorMessage: "Repeat till date must be formatted YYYY-MM-DD."
         },
@@ -236,6 +242,7 @@ exports.addEventSchema = {
         optional: true,
         trim: true,
         checkLength: {
+            if: (value, {body}) => body.repeating,
             custom: isNanoIdLength,
             errorMessage: "Repeat event ID must be 21 characters in length and should be randomly generated."
         },
@@ -250,14 +257,17 @@ exports.addEventSchema = {
     rsvpDate: {
         optional: true,
         checkForValidRSVPDateFormat: {
+            if: (value, {body}) => body.rsvpNeeded,
             custom: isRSVPDateFormatValid,
             errorMessage: "RSVP date must be formatted YYYY-MM-DD."
         },
         checkRSVPDateIsOnAfterToday: {
+            if: (value, {body}) => body.rsvpNeeded,
             custom: isRSVPDateOnAfterToday,
             errorMessage: "The RSVP date may not be earlier than today."
         },
         checkRSVPDateIsBeforeOnEventDate: {
+            if: (value, {body}) => body.rsvpNeeded,
             custom: isRSVPDateBeforeOnEventStartDate,
             errorMessage: "If requiring RSVPs, the RSVP by date must land before or on the event start date."
         },
@@ -281,7 +291,7 @@ exports.deleteEventSchema = {
     eventid: {
         optional: false,
         trim: true,
-        checkLength: {
+        checkEventIdLength: {
             custom: isNanoIdLength,
             errorMessage: "Event ID should be 21 characters in length and should be randomly generated."
         },
@@ -289,8 +299,8 @@ exports.deleteEventSchema = {
     repeatid: {
         optional: true,
         trim: true,
-        checkLength: {
-            custom: isNanoIdLength,
+        checkRepeatIdLength: {
+            custom: isNanoIdLengthOrUndefined,
             errorMessage: "Repeat ID should be 21 characters in length and should be randomly generated."
         },
     }

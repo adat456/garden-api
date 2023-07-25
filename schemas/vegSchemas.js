@@ -6,6 +6,10 @@ function convertCommaStringToArr(value) {
     };
 };
 
+function dehyphenateSearchTerm(value) {
+    return value.replace(/-/g, " ");
+};
+
 exports.vegSchema = {
     name: {
         optional: false,
@@ -77,20 +81,37 @@ exports.vegSchema = {
         isInt: {
             options: { min: 0 },
             errorMessage: "Seed spacing must be an integer/numeric value greater than or equal to 0."
-        }
+        },
     },
     'dtmArr.*': {
         optional: true,
         isInt: {
             options: { min: 0 },
             errorMessage: "Days to maturity must be an integer/numeric value greater than or equal to 0."
-        }
+        },
     },
     'heightArr.*': {
         optional: true,
         isInt: {
             options: { min: 0 },
             errorMessage: "Height must be an integer/numeric value greater than or equal to 0."
-        }
-    }
+        },
+    },
+};
+
+exports.searchVegSchema = {
+    term: {
+        optional: false,
+        trim: true,
+        isLength: {
+            options: { min: 1 },
+            errorMessage: "Search term must be at least 1 character in length."
+        },
+        prepareSearchTerm: {
+            customSanitizer: dehyphenateSearchTerm,
+        },
+        isAlpha: {
+            errorMessage: "Search term may only contain letters (numbers are not permitted)."
+        },
+    },
 };

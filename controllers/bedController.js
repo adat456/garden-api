@@ -29,15 +29,7 @@ exports.pull_beds_data = async function(req, res, next) {
 };
 
 exports.create_bed = async function(req, res, next) {
-    const validationResults = validationResult(req);
-    if (!validationResults.isEmpty()) {
-      const errMsgsArr = validationResults.array();
-      const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
-      res.status(400).json(trimmedErrMsgsArr);
-      return;
-    };
-    const validatedData = matchedData(req);
-    const name = validatedData.name;
+    const { name } =res.locals.validatedData;
 
     const { hardiness, sunlight, soil, whole, length, width, gridmap, public, created } = req.body;
     const gridmapJSON = JSON.stringify(gridmap);
@@ -58,15 +50,7 @@ exports.create_bed = async function(req, res, next) {
 };
 
 exports.update_bed = async function(req, res, next) {
-    const validationResults = validationResult(req);
-    if (!validationResults.isEmpty()) {
-      const errMsgsArr = validationResults.array();
-      const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
-      res.status(400).json(trimmedErrMsgsArr);
-      return;
-    };
-    const validatedData = matchedData(req);
-    const name = validatedData.name;
+    const { name } = res.locals.validatedData;
 
     let { bedid } = req.params;
     bedid = Number(bedid);
@@ -104,15 +88,7 @@ exports.update_gridmap = async function(req, res, next) {
 };
 
 exports.update_roles = async function(req, res, next) {
-  const validationResults = validationResult(req);
-  if (!validationResults.isEmpty()) {
-    const errMsgsArr = validationResults.array();
-    const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
-    res.status(400).json(trimmedErrMsgsArr);
-    return;
-  };
-
-  const validatedData = matchedData(req);
+  const validatedData = res.locals.validatedData;
   let roles = [];
   for (const role in validatedData) {
     roles.push(validatedData[role]);
@@ -182,14 +158,7 @@ exports.pull_all_public_beds = async function(req, res, next) {
 };
 
 exports.toggle_bed_favorites = async function(req, res, next) {
-  const validationResults = validationResult(req);
-  if (!validationResults.isEmpty()) {
-    const errMsgsArr = validationResults.array();
-    const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
-    res.status(400).json(trimmedErrMsgsArr);
-    return;
-  };
-  const { bedid } = matchedData(req);
+  const { bedid } = res.locals.validatedData;
 
   try {
     // get array of existing user IDs in the numhearts arr
@@ -220,7 +189,7 @@ exports.toggle_bed_favorites = async function(req, res, next) {
 };
 
 exports.copy_bed = async function(req, res, next) {
-  const { numCopies, bed, created } = req.body;
+  const { numCopies, bed, created } = res.locals.validatedData;
 
   const { whole, length, width, gridmap, name, seedbasket, id } = bed;
   const gridmapJSON = JSON.stringify(gridmap);

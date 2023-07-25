@@ -9,14 +9,7 @@ const pool = new Pool({
 });
 
 exports.pull_comments = async function(req, res, next) {
-    const validationResults = validationResult(req);
-    if (!validationResults.isEmpty()) {
-        const errMsgsArr = validationResults.array();
-        const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
-        res.status(400).json(trimmedErrMsgsArr);
-        return;
-    };
-    const { postid } = matchedData(req);
+    const { postid } = res.locals.validatedData;
   
     async function pullComments(id, level, arr) {
       try {
@@ -51,15 +44,7 @@ exports.pull_comments = async function(req, res, next) {
 };
 
 exports.add_comment = async function(req, res, next) {
-    const validationResults = validationResult(req);
-    if (!validationResults.isEmpty()) {
-        const errMsgsArr = validationResults.array();
-        const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
-        res.status(400).json(trimmedErrMsgsArr);
-        return;
-    };
-    const { postid, content, id } = matchedData(req);
-
+    const { postid, content, id } = res.locals.validatedData;
     const posted = new Date().toLocaleDateString();
   
     try {
@@ -75,15 +60,7 @@ exports.add_comment = async function(req, res, next) {
 };
 
 exports.update_comment = async function(req, res, next) {
-    const validationResults = validationResult(req);
-    if (!validationResults.isEmpty()) {
-        const errMsgsArr = validationResults.array();
-        const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
-        res.status(400).json(trimmedErrMsgsArr);
-        return;
-    };
-    const { content, id } = matchedData(req);
-
+    const { content, id } = res.locals.validatedData;
     const edited = new Date().toLocaleDateString();
   
     try {
@@ -108,14 +85,7 @@ exports.update_comment = async function(req, res, next) {
 };
 
 exports.delete_comment = async function(req, res, next) {
-    const validationResults = validationResult(req);
-    if (!validationResults.isEmpty()) {
-        const errMsgsArr = validationResults.array();
-        const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
-        res.status(400).json(trimmedErrMsgsArr);
-        return;
-    };
-    const { id } = matchedData(req);
+    const { id } = res.locals.validatedData;
   
     try {
       const getCommentReq = await pool.query(

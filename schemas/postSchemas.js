@@ -17,7 +17,7 @@ exports.postSchema = {
         trim: true,
         isLength: {
             options: { min: 1, max: 50 },
-            errorMessage: "Post title length must be between 1 and 50 characters."
+            errorMessage: "Post title length must be between 1 and 50 characters without whitespace."
         }
     },
     content: {
@@ -25,7 +25,7 @@ exports.postSchema = {
         trim: true,
         isLength: {
             options: { min: 1, max: 500 },
-            errorMessage: "Post content length must be between 1 and 500 characters."
+            errorMessage: "Post content length must be between 1 and 500 characters without whitespace."
         }
     },
     pinned: {

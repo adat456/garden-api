@@ -9,14 +9,7 @@ const pool = new Pool({
 });
 
 exports.pull_events = async function(req, res, next) {
-    const validationResults = validationResult(req);
-    if (!validationResults.isEmpty()) {
-        const errMsgsArr = validationResults.array();
-        const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
-        res.status(400).json(trimmedErrMsgsArr);
-        return;
-    };
-    const { bedid } = matchedData(req);
+    const { bedid } = res.locals.validatedData;
   
     try {
       const req = await pool.query(
@@ -31,19 +24,7 @@ exports.pull_events = async function(req, res, next) {
 };
 
 exports.add_event = async function(req, res, next) {
-    const validationResults = validationResult(req);
-    if (!validationResults.isEmpty()) {
-        const errMsgsArr = validationResults.array();
-        const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path, value: error.value}});
-        console.log(trimmedErrMsgsArr);
-        res.status(400).json(trimmedErrMsgsArr);
-        return;
-    };
-    const validatedData = matchedData(req, {
-        includeOptionals: true,
-      });
-    const { bedid, id, creatorId, creatorUsername, creatorName, eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventDate, eventStartTime, eventEndTime, repeating, repeatEvery, repeatTill, repeatId, tags, rsvpNeeded, rsvpDate } = validatedData;
-    console.log(validatedData);
+    const { bedid, id, creatorId, creatorUsername, creatorName, eventName, eventDesc, eventLocation, eventPublic, eventParticipants, eventDate, eventStartTime, eventEndTime, repeating, repeatEvery, repeatTill, repeatId, tags, rsvpNeeded, rsvpDate } = res.locals.validatedData;
 
     const eventParticipantsJSON = JSON.stringify(eventParticipants);
   
@@ -76,18 +57,7 @@ exports.add_event = async function(req, res, next) {
 };
 
 exports.delete_event = async function(req, res, next) {
-    const validationResults = validationResult(req);
-    if (!validationResults.isEmpty()) {
-        const errMsgsArr = validationResults.array();
-        const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path, value: error.value}});
-        console.log(trimmedErrMsgsArr);
-        res.status(400).json(trimmedErrMsgsArr);
-        return;
-    };
-    const validatedData = matchedData(req, {
-        includeOptionals: true,
-    });
-    const { eventid, repeatid } = validatedData;
+    const { eventid, repeatid } = res.locals.validatedData;
     // repeatid will either be "undefined" (comes in as a string on account of it being a param) or a "string", so if repeatid is not "undefined" then delete all counterparts
   
     try {

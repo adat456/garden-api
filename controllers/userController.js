@@ -28,15 +28,7 @@ let redisClient = null;
 })();
 
 exports.create_account = async function(req, res, next) {
-    const validationResults = validationResult(req);
-    if (!validationResults.isEmpty()) {
-      const errMsgsArr = validationResults.array();
-      const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
-      console.log(trimmedErrMsgsArr);
-      res.status(400).json(trimmedErrMsgsArr);
-      return;
-    };
-    const { firstName, lastName, email, username, password } = matchedData(req);
+    const { firstName, lastName, email, username, password } = res.locals.validatedData;
     
     try {
         // hashing the password
@@ -44,8 +36,8 @@ exports.create_account = async function(req, res, next) {
         const hashedPassword = await bcrypt.hash(password, salt);
         // inserting into the DB
         await pool.query(
-          "INSERT INTO users (firstname, lastname, email, username, password, board_ids, added_veg_data, favorited_beds, copied_beds) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
-          [ firstName, lastName, email, username, hashedPassword, [], [], [], [] ]
+          "INSERT INTO users (firstname, lastname, email, username, password, board_ids) VALUES ($1, $2, $3, $4, $5, $6)",
+          [ firstName, lastName, email, username, hashedPassword, [] ]
         );
         // creating the token
         const token = await jwt.sign({ username }, process.env.JWT_KEY, { expiresIn: "86400s"});
@@ -58,16 +50,7 @@ exports.create_account = async function(req, res, next) {
 };
 
 exports.log_in = async function(req, res, next) {
-    const validationResults = validationResult(req);
-    if (!validationResults.isEmpty()) {
-      const errMsgsArr = validationResults.array();
-      const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
-      console.log(trimmedErrMsgsArr);
-      res.status(400).json(trimmedErrMsgsArr);
-      return;
-    };
-    const { username, password } = matchedData(req);
-    console.log(username, password);
+    const { username, password } = res.locals.validatedData;
   
     try {
       const usernameReq = await pool.query(
@@ -97,7 +80,7 @@ exports.log_in = async function(req, res, next) {
 exports.pull_user_data = async function(req, res, next) {
     try {
       const getUserDataReq = await pool.query(
-        "SELECT id, firstname, lastname, email, username, board_ids, added_veg_data, favorited_beds, copied_beds FROM users WHERE username = ($1)",
+        "SELECT id, firstname, lastname, email, username FROM users WHERE username = ($1)",
         [res.locals.username]
       );
       res.status(200).json(getUserDataReq.rows[0]);
@@ -108,14 +91,7 @@ exports.pull_user_data = async function(req, res, next) {
 };
 
 exports.find_users = async function(req, res, next) {
-    const validationResults = validationResult(req);
-    if (!validationResults.isEmpty()) {
-      const errMsgsArr = validationResults.array();
-      const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
-      res.status(400).json(trimmedErrMsgsArr);
-      return;
-    };
-    const { searchTerm } = matchedData(req);
+    const { searchTerm } = res.locals.validatedData;
   
     try {
       const findUsersReq = await pool.query(
@@ -131,14 +107,7 @@ exports.find_users = async function(req, res, next) {
 
 // logging out a user by storing current JWT on blacklist (client will redirect to log-in screen)
 exports.log_out = async function(req, res, next) {
-    const validationResults = validationResult(req);
-    if (!validationResults.isEmpty()) {
-      const errMsgsArr = validationResults.array();
-      const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
-      res.status(400).json(trimmedErrMsgsArr);
-      return;
-    };
-    const { jwt: token } = matchedData(req);
+    const { jwt: token } = res.locals.validatedData;
   
     try {
       if (token) {
