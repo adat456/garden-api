@@ -10,18 +10,25 @@ const pool = new Pool({
 
 exports.pull_beds_data = async function(req, res, next) {
     try {
+      // returns all boards where user is the creator...
       const getUserBoardsReq = await pool.query(
         "SELECT * FROM garden_beds WHERE username = ($1)",
         [res.locals.username]
       );
+      // ...where the user is a member...
       const getMemberBoardsReq = await pool.query(
         "SELECT * FROM garden_beds WHERE members::JSONB @> ($1)",
         // "SELECT * FROM garden_beds WHERE members::JSONB @> '[{ ($1) : ($2) }]'",
         // [JSON.stringify("username"), JSON.stringify(res.locals.username)]
         // above code didn't work, nor when "username" was placed directly as the first argument instead of passing it in as a parameter... would get error message "invalid input syntax for type json"
-        [JSON.stringify([{ "username": res.locals.username }])]
+        [JSON.stringify([{ "username": res.locals.username, "status": "accepted" }])]
       );
-      res.status(200).json([...getUserBoardsReq.rows, ...getMemberBoardsReq.rows]);
+      // and LIMITED info where the user is still pending
+      const getPendingBoardsReq = await pool.query(
+        "SELECT id, name, username, members, length, width, gridmap FROM garden_beds WHERE members::JSONB @> ($1)",
+        [JSON.stringify([{ "username": res.locals.username, "status": "pending" }])]
+      );
+      res.status(200).json([...getUserBoardsReq.rows, ...getMemberBoardsReq.rows, ...getPendingBoardsReq.rows]);
     } catch(err) {
       console.log(err.message);
       res.status(400).json(err.message);

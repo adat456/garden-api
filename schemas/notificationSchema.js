@@ -7,6 +7,15 @@ function isValidNotificationType(value) {
     };
 };
 
+function isValidResponseType(value) {
+    const validResponseTypes = ["", "confirmation", "rejection"];
+    if (validResponseTypes.includes(value)) {
+        return true;
+    } else {
+        return false;
+    };
+};
+
 function isNanoIdLength(value) {
     const returnValue = value.length == 21 ? true : false;
     return returnValue;
@@ -21,8 +30,20 @@ exports.addNotificationSchema = {
         },
         toInt: true,
     },
-    sendername: {},
-    senderusername: {},
+    sendername: {
+        optional: false,
+        trim: true,
+        notEmpty: {
+            errorMessage: "Sender name required."
+        },
+    },
+    senderusername: {
+        optional: false,
+        trim: true,
+        notEmpty: {
+            errorMessage: "Sender username required."
+        },
+    },
     recipientid: {
         optional: false,
         isInt: {
@@ -30,12 +51,9 @@ exports.addNotificationSchema = {
         },
         toInt: true,
     },
-    message: {},
     dispatched: {
         optional: false,
-        isDate: {
-            errorMessage: "Dispatch date must be formatted YYYY/MM/DD."
-        }
+        isISO8601: true,
     },
     type: {
         optional: false,
@@ -53,12 +71,26 @@ exports.addNotificationSchema = {
         },
         toInt: true,
     },
+    bedname: {
+        optional: true,
+        trim: true,
+    },
     eventid: {
         optional: true,
         trim: true,
         checkEventIdLength: {
             custom: isNanoIdLength,
             errorMessage: "Event ID should be 21 characters long and randomly generated."
+        },
+    },
+    eventname: {
+        optional: true,
+        trim: true,
+    },
+    eventdate: {
+        optional: true,
+        isArray: {
+            errorMessage: "Event dates should be described by an array."
         },
     },
 };
@@ -75,15 +107,19 @@ exports.notificationIdSchema = {
 
 exports.updateNotificationSchema = {
     read: {
-        optional: true,
+        optional: false,
         isBoolean: {
             errorMessage: "Notification read status must be a boolean (either true or false)."
         },
+        toBoolean: true,
     },
     responded: {
-        optional: true,
-        isBoolean: {
-            errorMessage: "Notification response status must be a boolean (either true or false)."
+        optional: false,
+        trim: true,
+        toLowerCase: true,
+        checkValidResponseType: {
+            custom: isValidResponseType,
+            errorMessage: "Response value must be equal to an empty string, 'confirmation', or 'rejection'.",
         },
     },
 };

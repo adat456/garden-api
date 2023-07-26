@@ -1,4 +1,3 @@
-const { validationResult, matchedData } = require("express-validator");
 const { Pool } = require("pg");
 const pool = new Pool({
     user: process.env.PSQL_USER,
@@ -22,18 +21,18 @@ exports.pull_notifications = async function(req, res, next) {
 };
 
 exports.add_notification = async function(req, res, next) {
-    const { senderid, sendername, senderusername, recipientid, message, dispatched, type, bedid, eventid } = res.locals.validatedData;          
+    const { senderid, sendername, senderusername, recipientid, dispatched, type, bedid, bedname, eventid, eventname, eventdate, rsvpdate } = res.locals.validatedData;     
   
     try {
       const addNotificationReq = await pool.query(
-        "INSERT INTO notifications (senderid, sendername, senderusername, recipientid, message, dispatched, read, responded, type, bedid, eventid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
-        [senderid, sendername, senderusername, recipientid, message, dispatched, false, false, type, bedid, eventid]
+        "INSERT INTO notifications (senderid, sendername, senderusername, recipientid, dispatched, read, responded, type, bedid, bedname, eventid, eventname, eventdate, rsvpdate) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
+        [senderid, sendername, senderusername, recipientid, dispatched, false, "", type, bedid, bedname, eventid, eventname, eventdate, rsvpdate]
       );
   
-      // notifies recipient via socket of the type of notification, which will then prompt manual refetching of notifications AND certain data when applicable
+      // notifies recipient via socket of a new notification, which will then prompt manual refetching of notifications and other data
       req.io.emit(`notifications-${recipientid}`, type);
   
-      // adding member to bed upon confirmation
+      // updating member status in bed upon confirmation
       if (type === "memberconfirmation" && bedid) {
         const bedMembersReq = await pool.query(
           "SELECT members FROM garden_beds WHERE id = ($1)",
@@ -55,7 +54,23 @@ exports.add_notification = async function(req, res, next) {
           [members, bedid]
         );
       };
-  
+      // removing member from bed upon rejection
+      if (type === "memberrejection" && bedid) {
+        const bedMembersReq = await pool.query(
+          "SELECT members FROM garden_beds WHERE id = ($1)",
+          [bedid]
+        );
+        let members = bedMembersReq.rows[0].members;
+        members = members.filter(member => {
+          if (member.id !== senderid) return member;
+        });
+        members = JSON.stringify(members);
+        const updateBedMembersReq = await pool.query(
+          "UPDATE garden_beds SET members = ($1) WHERE id = ($2)",
+          [members, bedid]
+        );
+      };
+
       // adding member to rsvpsreceived in event upon confirmation
       if (type === "rsvpconfirmation" && eventid) {
         const eventRSVPsReceived = await pool.query(
@@ -81,18 +96,10 @@ exports.update_notification = async function(req, res, next) {
     const { notifid, read, responded } = res.locals.validatedData;
     
     try {
-      // read will always be part of req.body, whether true or false
       const req = await pool.query(
-        "UPDATE notifications SET read = ($1) WHERE id = ($2)",
-        [read, notifid]
+        "UPDATE notifications SET read = ($1), responded = ($2) WHERE id = ($3)",
+        [read, responded, notifid]
       );
-      // responded will only be included if true
-      if (responded) {
-        const req = await pool.query(
-          "UPDATE notifications SET responded = ($1) WHERE id = ($2)",
-          [responded, notifid]
-        );
-      };
       res.status(200).json("Notification successfully updated.")
     } catch(err) {
       console.log(err.message);

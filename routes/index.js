@@ -112,13 +112,13 @@ router.post("/create-bed", checkSchema(bedNameSchema, ["body"]), accessValidator
 
 router.patch("/update-bed/:bedid", checkSchema(bedNameSchema, ["body"]), accessValidatorResults, bedController.update_bed);
 
-router.patch("/update-gridmap/:bedid", accessValidatorResults, bedController.update_gridmap);
+router.patch("/update-gridmap/:bedid", bedController.update_gridmap);
 
 router.patch("/update-roles/:bedid", checkSchema(rolesSchema, ["body"]), accessValidatorResults, bedController.update_roles);
 
-router.patch("/update-members/:bedid", accessValidatorResults, bedController.update_members);
+router.patch("/update-members/:bedid", bedController.update_members);
 
-router.delete("/delete-bed/:bedid", accessValidatorResults, bedController.delete_bed);
+router.delete("/delete-bed/:bedid", bedController.delete_bed);
 
 
 /// PUBLIC BED ENDPOINTS ///
