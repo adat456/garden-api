@@ -7,7 +7,7 @@ const redis = require("redis");
 const { checkSchema, validationResult, matchedData } = require("express-validator");
 
 const { findUsersSchema } = require("../schemas/userSchema");
-const { bedNameSchema, rolesSchema, toggleLikesSchema, copyBedSchema } = require ("../schemas/bedSchemas");
+const { createEditBedSchema, rolesSchema, bedIdSchema, membersSchema, gridmapSchema, dateOfBedCreationSchema, copyBedSchema } = require ("../schemas/bedSchemas");
 const { vegSchema, returningWhatSchema, vegIdSchema, searchVegSchema } = require("../schemas/vegSchemas");
 const { notificationIdSchema, updateNotificationSchema, addNotificationSchema } = require("../schemas/notificationSchema");
 const { eventBedIdSchema, addEventSchema, deleteEventSchema } = require("../schemas/eventSchemas");
@@ -108,23 +108,23 @@ router.get("/pull-user-data", userController.pull_user_data);
 /// GARDEN BED ENDPOINTS ///
 router.get("/pull-beds-data", bedController.pull_beds_data);
 
-router.post("/create-bed", checkSchema(bedNameSchema, ["body"]), accessValidatorResults, bedController.create_bed);
+router.post("/create-bed", checkSchema(createEditBedSchema, ["body"]), checkSchema(dateOfBedCreationSchema, ["body"]), accessValidatorResults, bedController.create_bed);
 
-router.patch("/update-bed/:bedid", checkSchema(bedNameSchema, ["body"]), accessValidatorResults, bedController.update_bed);
+router.patch("/update-bed/:bedid", checkSchema(createEditBedSchema, ["body"]), checkSchema(bedIdSchema, ["params"]), accessValidatorResults, bedController.update_bed);
 
-router.patch("/update-gridmap/:bedid", bedController.update_gridmap);
+router.patch("/update-gridmap/:bedid", checkSchema(gridmapSchema, ["body"]), checkSchema(bedIdSchema, ["params"]), accessValidatorResults, bedController.update_gridmap);
 
-router.patch("/update-roles/:bedid", checkSchema(rolesSchema, ["body"]), accessValidatorResults, bedController.update_roles);
+router.patch("/update-roles/:bedid", checkSchema(rolesSchema, ["body"]), checkSchema(bedIdSchema, ["params"]), accessValidatorResults, bedController.update_roles);
 
-router.patch("/update-members/:bedid", bedController.update_members);
+router.patch("/update-members/:bedid", checkSchema(membersSchema, ["body"]), checkSchema(bedIdSchema, ["params"]), accessValidatorResults, bedController.update_members);
 
-router.delete("/delete-bed/:bedid", bedController.delete_bed);
+router.delete("/delete-bed/:bedid", checkSchema(bedIdSchema, ["params"]), accessValidatorResults, bedController.delete_bed);
 
 
 /// PUBLIC BED ENDPOINTS ///
 router.get("/all-public-beds", accessValidatorResults, bedController.pull_all_public_beds);
 
-router.patch("/toggle-bed-favorites/:bedid", checkSchema(toggleLikesSchema, ["params"]), accessValidatorResults, bedController.toggle_bed_favorites);
+router.patch("/toggle-bed-favorites/:bedid", checkSchema(bedIdSchema, ["params"]), accessValidatorResults, bedController.toggle_bed_favorites);
 
 router.post("/copy-bed", checkSchema(copyBedSchema, ["body"]), accessValidatorResults, bedController.copy_bed);
 

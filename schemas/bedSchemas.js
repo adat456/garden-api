@@ -7,16 +7,64 @@ const pool = new Pool({
     host: "localhost",
 });
 
-async function checkNoDuplicateBedName(value) {
+async function checkNoDuplicateBedName(value, {req}) {
     const duplicateBedName = await pool.query(
-        "SELECT name FROM garden_beds WHERE name ~* ($1)",
+        "SELECT id FROM garden_beds WHERE name ~* ($1)",
         [value]
     );
-    if (duplicateBedName.rowCount > 0) throw new Error ("Garden bed name must be unique.");
+    // this first condition checks to see if the bed name has remained the same while editing (in which case it's valid)
+    // compares the ID belonging a matching garden bed/matching bed name to the current bed's ID (which was passed in through req.params)
+    if (duplicateBedName.rowCount > 0) {
+        if (duplicateBedName.rows[0]?.id === Number(req.params?.bedid)) {
+            return true;
+        } else {
+            throw new Error("Garden bed name must be unique.");
+        };
+    } else {
+        return true;
+    };
+};
+
+function isAcceptableSunlightValue(value) {
+    if (value === "full sun" || value === "partial sun" || value === "") {
+        return true;
+    } else {
+        return false;
+    };
+};
+
+function isAcceptableSoilValue(value) {
+    const acceptableSoilValues = ["well-drained", "poorly drained", "high fertility", "low fertility", "acidic", "basic"];
+    if (acceptableSoilValues.includes(value)) {
+        return true;
+    } else {
+        return false;
+    };
+};
+
+function isAcceptableDimensionValue(value) {
+    if (value >= 1 && value <= 100) {
+        return true;
+    } else {
+        return false;
+    };
+};
+
+function isNanoIdLength(value) {
+    const returnValue = value.length == 21 ? true : false;
+    return returnValue;
+};
+
+function isAcceptableMemberStatus(value) {
+    if (value === "pending" || value === "accepted") {
+        return true;
+    } else {
+        return false;
+    };
 };
 
 function checkNoDuplicateTitleName(value, {req}) {
-    const allRoles = req.body;
+    const allRoles = req.body.roles;
     let ding = 0;
     allRoles.forEach(role => {
         if (role.title.toLowerCase() === value.toLowerCase()) ding += 1;
@@ -29,7 +77,7 @@ function checkNoDuplicateTitleName(value, {req}) {
     };
 };
 
-exports.bedNameSchema = {
+exports.createEditBedSchema = {
     name: {
         optional: false,
         trim: true,
@@ -41,10 +89,193 @@ exports.bedNameSchema = {
             custom: checkNoDuplicateBedName
         },
     },
+    public: {
+        optional: false,
+        isBoolean: {
+            errorMessage: "Whether the garden bed is public must be represented by a boolean."
+        },
+        toBoolean: true,
+    },
+    hardiness: {
+        optional: true,
+        isInt: {
+            errorMessage: "Hardiness zone must be an integer/numeric value."
+        },
+        toInt: true,
+    },
+    sunlight: {
+        optional: true,
+        checkAcceptableSunlightValue: {
+            custom: isAcceptableSunlightValue,
+            errorMessage: "Sunlight value must be either 'partial sun' or 'full sun'.",
+        },
+    },
+    soil: {
+        optional: true,
+        isArray: {
+            errorMessage: "Soil characteristics must be represented by an array."
+        },
+    },
+    'soil.*': {
+        optional: true,
+        checkAcceptableSoilValue: {
+            custom: isAcceptableSoilValue,
+            errorMessage: "Soil characteristic must be one of the pre-defined characteristics."
+        },
+    },
+    whole: {
+        optional: false,
+        isBoolean: {
+            errorMessage: "Whether the gridmap is whole should be described by a boolean."
+        },
+        toBoolean: true,
+    },
+    length: {
+        optional: false,
+        isInt: {
+            errorMessage: "Length must be an integer/numeric value."
+        },
+        toInt: true,
+        checkAppropriateLength: {
+            custom: isAcceptableDimensionValue,
+            errorMessage: "Length must be greater than/equal to 1 foot and less than/equal to 100 feet.",
+        },
+    },
+    width: {
+        optional: false,
+        isInt: {
+            errorMessage: "Width must be an integer/numeric value."
+        },
+        toInt: true,
+        checkAppropriateWidth: {
+            custom: isAcceptableDimensionValue,
+            errorMessage: "Width must be greater than/equal to 1 foot and less than/equal to 100 feet.",
+        },
+    },
+    gridmap: {
+        notEmpty: {
+            errorMessage: "Grid map must be specified."
+        },
+        isArray: {
+            errorMessage: "Grid map must be described by an array of cell descriptions."
+        },
+    },
+};
+
+exports.dateOfBedCreationSchema = {
+    created: {
+        optional: false,
+        isISO8601: {
+            errorMessage: "Must specify date of creation formatted YYYY-MM-DD."
+        },
+    },
+};
+
+exports.membersSchema = {
+    members: {
+        optional: false,
+        isArray: {
+            errorMessage: "Members must be described by an array."
+        },
+    },
+    '**.id': {
+        optional: false,
+        isInt: {
+            errorMessage: "Each member ID must be an integer/numeric value."
+        },
+    },
+    '**.username': {
+        optional: false,
+        notEmpty: {
+            errorMessage: "Member username required.",
+        },
+    },
+    '**.name': {
+        optional: false,
+        notEmpty: {
+            errorMessage: "Member name required.",
+        },
+    },
+    '**.role': {
+        optional: false,
+        checkIdLength: {
+            custom: isNanoIdLength,
+            errorMessage: "Role ID must be 21 characters and randomly generated."
+        },
+    },
+    '**.invitedate': {
+        optional: false,
+        isISO8601: {
+            errorMessage: "Invite date required, must be formatted as YYYY-MM-DD."
+        },
+    },
+    '**.status': {
+        optional: false,
+        checkAcceptableMemberStatusValue: {
+            custom: isAcceptableMemberStatus,
+            errorMessage: "Member status must be either 'pending' or 'accepted'.",
+        },
+    },
+    '**.finaldate': {
+        optional: false,
+        isDate: {
+            errorMessage: "Finalized status date required."
+        },
+    },
+};
+
+exports.gridmapSchema = {
+    '**.num': {
+        optional: false,
+        isInt: {
+            errorMessage: "Cell number must be an integer as a string."
+        },
+    },
+    '**.selected': {
+        optional: false,
+        isBoolean: {
+            errorMessage: "Whether a cell is plantable should be represented by a boolean.",
+        },
+    },
+    '**.horizontalwalkway': {
+        optional: false,
+        isBoolean: {
+            errorMessage: "Whether a cell is a horizontal walkway should be represented by a boolean.",
+        },
+    },
+    '**.verticalwalkway': {
+        optional: false,
+        isBoolean: {
+            errorMessage: "Whether a cell is a vertical walkway should be represented by a boolean.",
+        },
+    },
+    '**.customwalkway': {
+        optional: false,
+        isBoolean: {
+            errorMessage: "Whether a cell is a custom walkway should be represented by a boolean.",
+        },
+    },
+    '**.plantId': {
+        optional: true,
+        isInt: {
+            errorMessage: "Plant ID must be an integer/numeric value."
+        },
+        toInt: true,
+    },
+    '**.plantName': {
+        optional: true,
+        trim: true,
+    },
+    '**.gridColor': {
+        optional: true,
+        isHexColor: {
+            errorMessage: "Grid color must be a hexadecimal color value."
+        },
+    },
 };
 
 exports.rolesSchema = {
-    '*.title': {
+    '**.title': {
         optional: false,
         trim: true,
         isLength: {
@@ -56,10 +287,17 @@ exports.rolesSchema = {
             errorMessage: "A role with this title already exists. Rename this role title or an existing role title."
         },
     },
-    '**.id': {
+    'roles.*.id': {
         optional: false,
-        notEmpty: {
-            errorMessage: "All roles and their duties must have an id."
+        checkIdLength: {
+            custom: isNanoIdLength,
+            errorMessage: "Role ID must be 21 characters and randomly generated."
+        },
+    },
+    'roles.*.duties.*.id': {
+        optional: false,
+        isInt: {
+            errorMessage: "Duty ID must be an integer/numeric value."
         },
     },
     '**.value' : {
@@ -71,7 +309,7 @@ exports.rolesSchema = {
     },
 };
 
-exports.toggleLikesSchema = {
+exports.bedIdSchema = {
     bedid: {
         trim: true,
         isInt: {

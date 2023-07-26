@@ -1,4 +1,3 @@
-const { validationResult, matchedData } = require("express-validator");
 const { Pool } = require("pg");
 const pool = new Pool({
     user: process.env.PSQL_USER,
@@ -36,15 +35,13 @@ exports.pull_beds_data = async function(req, res, next) {
 };
 
 exports.create_bed = async function(req, res, next) {
-    const { name } =res.locals.validatedData;
-
-    const { hardiness, sunlight, soil, whole, length, width, gridmap, public, created } = req.body;
+    const { name, hardiness, sunlight, soil, whole, length, width, gridmap, public, created } = res.locals.validatedData;
     const gridmapJSON = JSON.stringify(gridmap);
       
     try {
       // create the new bed and retrive its id
       const addNewBedReq = await pool.query(
-        "INSERT INTO garden_beds (hardiness, sunlight, soil, whole, length, width, gridMap, name, public, created, username, numhearts, numcopies, seedbasket, members, roles, eventtags) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *",
+        "INSERT INTO garden_beds (hardiness, sunlight, soil, whole, length, width, gridmap, name, public, created, username, numhearts, numcopies, seedbasket, members, roles, eventtags) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *",
         [hardiness, sunlight, soil, whole, length, width, gridmapJSON, name, public, created, res.locals.username, [], [], JSON.stringify([]), JSON.stringify([]), JSON.stringify([]), []]
       );
       const newBoard = addNewBedReq.rows[0];
@@ -57,11 +54,7 @@ exports.create_bed = async function(req, res, next) {
 };
 
 exports.update_bed = async function(req, res, next) {
-    const { name } = res.locals.validatedData;
-
-    let { bedid } = req.params;
-    bedid = Number(bedid);
-    const { hardiness, sunlight, soil, whole, length, width, gridmap, public } = req.body;
+    const { name, hardiness, sunlight, soil, whole, length, width, gridmap, public, bedid } = res.locals.validatedData;
     const gridmapJSON = JSON.stringify(gridmap);
       
     try {
@@ -77,9 +70,7 @@ exports.update_bed = async function(req, res, next) {
 };
 
 exports.update_gridmap = async function(req, res, next) {
-  let { bedid } = req.params;
-  bedid = Number(bedid); 
-  const gridmap = req.body;
+  const { bedid, gridmap } = res.locals.validatedData;
   const gridmapJSON = JSON.stringify(gridmap);
 
   try {
@@ -95,15 +86,8 @@ exports.update_gridmap = async function(req, res, next) {
 };
 
 exports.update_roles = async function(req, res, next) {
-  const validatedData = res.locals.validatedData;
-  let roles = [];
-  for (const role in validatedData) {
-    roles.push(validatedData[role]);
-  };
+  const { bedid, roles } = res.locals.validatedData;
   const rolesJSON = JSON.stringify(roles);
-
-  let { bedid } = req.params;
-  bedid = Number(bedid); 
 
   try {
     const updateRolesReq = await pool.query(
@@ -118,9 +102,7 @@ exports.update_roles = async function(req, res, next) {
 };
 
 exports.update_members = async function(req, res, next) {
-  let { bedid } = req.params;
-  bedid = Number(bedid); 
-  const members = req.body;
+  const { bedid, members } = res.locals.validatedData;
   const membersJSON = JSON.stringify(members);
 
   try {
@@ -136,8 +118,7 @@ exports.update_members = async function(req, res, next) {
 };
 
 exports.delete_bed = async function(req, res, next) {
-    let { bedid } = req.params;
-    bedid = Number(bedid);
+    const { bedid } = res.locals.validatedData;
   
     try {
       const deleteReq = await pool.query(
