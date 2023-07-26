@@ -8,7 +8,7 @@ const { checkSchema, validationResult, matchedData } = require("express-validato
 
 const { findUsersSchema } = require("../schemas/userSchema");
 const { bedNameSchema, rolesSchema, toggleLikesSchema, copyBedSchema } = require ("../schemas/bedSchemas");
-const { vegSchema, searchVegSchema } = require("../schemas/vegSchemas");
+const { vegSchema, returningWhatSchema, vegIdSchema, searchVegSchema } = require("../schemas/vegSchemas");
 const { notificationIdSchema, updateNotificationSchema, addNotificationSchema } = require("../schemas/notificationSchema");
 const { eventBedIdSchema, addEventSchema, deleteEventSchema } = require("../schemas/eventSchemas");
 const { postSchema, postIdSchema, updateReactionsSchema } = require("../schemas/postSchemas");
@@ -84,7 +84,8 @@ function accessValidatorResults(req, res, next) {
   const validationResults = validationResult(req);
   if (!validationResults.isEmpty()) {
     const errMsgsArr = validationResults.array();
-    const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path}});
+    const trimmedErrMsgsArr = errMsgsArr.map(error => { return {msg: error.msg, field: error.path, value: error.value}});
+    console.log(trimmedErrMsgsArr);
     res.status(400).json(trimmedErrMsgsArr);
   } else {
     const validatedData = matchedData(req, {
@@ -129,9 +130,9 @@ router.post("/copy-bed", checkSchema(copyBedSchema, ["body"]), accessValidatorRe
 
 
 /// VEG DATA ENDPOINTS ///
-router.post("/save-veg-data/:returning", checkSchema(vegSchema, ["body"]), accessValidatorResults, vegController.save_veg_data);
+router.post("/save-veg-data/:returning", checkSchema(returningWhatSchema, ["params"]), checkSchema(vegSchema, ["body"]), accessValidatorResults, vegController.save_veg_data);
 
-router.patch("/update-veg-data/:vegid", checkSchema(vegSchema, ["body"]), accessValidatorResults, vegController.update_veg_data);
+router.patch("/update-veg-data/:vegid", checkSchema(vegIdSchema, ["params"]), checkSchema(vegSchema, ["body"]), accessValidatorResults, vegController.update_veg_data);
 
 router.get("/search/:term", checkSchema(searchVegSchema, ["params"]), accessValidatorResults, vegController.search_veg_data);
 

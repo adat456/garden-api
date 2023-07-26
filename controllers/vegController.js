@@ -9,11 +9,7 @@ const pool = new Pool({
 });
 
 exports.save_veg_data = async function(req, res, next) {
-    const { name, description, depth, fruitSize, growthConditions: growthConditionsArr, sowingMethod: sowingMethodArr, growthHabit: growthHabitArr, spacingArr, dtmArr, heightArr } = res.locals.validatedData;
-    
-    const { returning } = req.params;
-
-    const { hardiness, water, light, lifecycle, plantingSzn, privateData } = req.body;
+    const { name, description, depth, fruitSize, growthConditions: growthConditionsArr, sowingMethod: sowingMethodArr, growthHabit: growthHabitArr, spacingArr, dtmArr, heightArr, hardiness, water, light, lifecycle, plantingSzn, privateData, returning } = res.locals.validatedData;
   
     try {
        const addNewVegReq = await pool.query(
@@ -40,12 +36,7 @@ exports.save_veg_data = async function(req, res, next) {
 };
 
 exports.update_veg_data = async function(req, res, next) {
-    const { name, description, depth, fruitSize, growthConditions: growthConditionsArr, sowingMethod: sowingMethodArr, growthHabit: growthHabitArr, spacingArr, dtmArr, heightArr } = res.locals.validatedData;
-    
-    let { vegid } = req.params;
-    vegid = Number(vegid);
-
-    const { hardiness, water, light, lifecycle, plantingSzn, privateData } = req.body;
+    const { name, description, depth, fruitSize, growthConditions: growthConditionsArr, sowingMethod: sowingMethodArr, growthHabit: growthHabitArr, spacingArr, dtmArr, heightArr, hardiness, water, light, lifecycle, plantingSzn, privateData, vegid } = res.locals.validatedData;
   
     try {
        const updateVegReq = await pool.query(
