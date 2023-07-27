@@ -21,7 +21,8 @@ exports.pull_notifications = async function(req, res, next) {
 };
 
 exports.add_notification = async function(req, res, next) {
-    const { senderid, sendername, senderusername, recipientid, dispatched, type, bedid, bedname, eventid, eventname, eventdate, rsvpdate } = res.locals.validatedData;     
+    const { senderid, sendername, senderusername, recipientid, dispatched, type, bedid, bedname, eventid, eventname, eventdate, rsvpdate } = res.locals.validatedData;  
+    console.log(res.locals.validatedData);   
   
     try {
       const addNotificationReq = await pool.query(

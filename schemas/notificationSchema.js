@@ -93,6 +93,12 @@ exports.addNotificationSchema = {
             errorMessage: "Event dates should be described by an array."
         },
     },
+    rsvpdate: {
+        optional: true,
+        isISO8601: {
+            errorMessage: "RSVP by date (formatted YYYY-MM-DD) required."
+        },
+    },
 };
 
 exports.notificationIdSchema = {

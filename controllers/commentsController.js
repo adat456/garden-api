@@ -1,4 +1,3 @@
-const { validationResult, matchedData } = require("express-validator");
 const { Pool } = require("pg");
 const pool = new Pool({
     user: process.env.PSQL_USER,
@@ -14,7 +13,7 @@ exports.pull_comments = async function(req, res, next) {
     async function pullComments(id, level, arr) {
       try {
         const pullCommentsReq = await pool.query(
-          "SELECT * FROM comments WHERE postid = ($1)",
+          "SELECT * FROM comments WHERE postid = ($1) ORDER BY posted",
           [id]
         );
         if (pullCommentsReq.rowCount === 0) return;
@@ -44,14 +43,32 @@ exports.pull_comments = async function(req, res, next) {
 };
 
 exports.add_comment = async function(req, res, next) {
-    const { postid, content, id } = res.locals.validatedData;
-    const posted = new Date().toLocaleDateString();
-  
+    const { postid, content, id, toppostid } = res.locals.validatedData;
+    const posted = new Date();
+
     try {
       const addCommentReq = await pool.query(
-        "INSERT INTO comments (id, postid, authorid, authorname, authorusername, posted, edited, content, likes, dislikes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
-        [id, postid, res.locals.user.id, `${res.locals.user.firstname} ${res.locals.user.lastname}`, res.locals.username, posted, null, content, [], []]
-      )
+        "INSERT INTO comments (id, toppostid, postid, authorid, authorname, authorusername, posted, edited, content, likes, dislikes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+        [id, toppostid, postid, res.locals.user.id, `${res.locals.user.firstname} ${res.locals.user.lastname}`, res.locals.username, posted, null, content, [], []]
+      );
+
+      const pullPostInfo = await pool.query(
+        "SELECT subscribers, bedid, title FROM posts WHERE id = ($1)",
+        [toppostid]
+      );
+      const { subscribers, bedid, title } = pullPostInfo.rows[0];
+      if (subscribers.length > 0) {
+        const dispatched = new Date().toISOString().slice(0, 10);
+        subscribers.forEach(async subscriberid => {
+          if (subscriberid !== res.locals.user.id) {
+            const sendNotificationToSubscriber = await pool.query(
+              "INSERT INTO notifications (senderid, sendername, senderusername, recipientid, dispatched, type, read, bedid, posttitle, postid, commentid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+              [res.locals.user.id, `${res.locals.user.firstname} ${res.locals.user.lastname}`, res.locals.username, subscriberid, dispatched, "postupdate", false, bedid, title, toppostid, id]
+            );
+          };
+        });
+      };
+
       res.status(200).json("Added comment.");
     } catch(err) {
       console.log(err.message);
@@ -61,7 +78,7 @@ exports.add_comment = async function(req, res, next) {
 
 exports.update_comment = async function(req, res, next) {
     const { content, id } = res.locals.validatedData;
-    const edited = new Date().toLocaleDateString();
+    const edited = new Date();
   
     try {
       const getCommentReq = await pool.query(

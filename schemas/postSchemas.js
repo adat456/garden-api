@@ -48,6 +48,23 @@ exports.postIdSchema = {
     }
 };
 
+exports.updateSubscribersSchema = {
+    userid: {
+        optional: false,
+        isInt: {
+            errorMessage: "Subscribed ID must be an integer/numeric value.",
+        },
+        toInt: true,
+    },
+    postid: {
+        optional: false,
+        checkPostIdLength: {
+            custom: isNanoIdLength,
+            errorMessage: "Post ID must be 21 characters in length and should be randomly generated.",
+        },
+    },
+};
+
 exports.updateReactionsSchema = {
     table: {
         optional: false,

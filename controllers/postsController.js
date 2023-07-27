@@ -34,12 +34,12 @@ exports.add_post = async function (req, res, next) {
 
     let { bedid } = req.params;
     bedid = Number(bedid);
-    const posted = new Date().toLocaleDateString();
+    const posted = new Date();
   
     try {
       const addPost = await pool.query(
-        "INSERT INTO posts (bedid, authorid, authorname, authorusername, posted, edited, title, content, likes, dislikes, pinned, id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
-        [bedid, res.locals.user.id, `${res.locals.user.firstname} ${res.locals.user.lastname}`, res.locals.username, posted, null, title, content, [], [], pinned, id]
+        "INSERT INTO posts (bedid, authorid, authorname, authorusername, posted, edited, title, content, likes, dislikes, pinned, id, subscribers) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+        [bedid, res.locals.user.id, `${res.locals.user.firstname} ${res.locals.user.lastname}`, res.locals.username, posted, null, title, content, [], [], pinned, id, []]
       );
       res.status(200).json("Successfully added a post.");
     } catch(err) {
@@ -50,7 +50,7 @@ exports.add_post = async function (req, res, next) {
 
 exports.update_post = async function(req, res, next) {
     const { title, content, pinned, id } = res.locals.validatedData;
-    const edited = new Date().toLocaleDateString();
+    const edited = new Date();
   
     try {
       const getPostReq = await pool.query(
@@ -71,6 +71,31 @@ exports.update_post = async function(req, res, next) {
       console.log(err.message);
       res.status(404).json(err.message);
     };
+};
+
+exports.update_subscribers = async function(req, res, next) {
+  const { postid, userid } = res.locals.validatedData;
+
+  try {
+    const pullPostSubscribersReq = await pool.query(
+      "SELECT subscribers FROM posts WHERE id = ($1)",
+      [postid]
+    );
+    let subscribers = pullPostSubscribersReq.rows[0].subscribers;
+    if (subscribers.includes(userid)) {
+      subscribers = subscribers.filter(subscriberid => subscriberid !== userid);
+    } else {
+      subscribers = [...subscribers, userid];
+    };
+    const updatePostSubscribersReq = await pool.query(
+      "UPDATE posts SET subscribers = ($1) WHERE id = ($2)",
+      [subscribers, postid]
+    );
+    res.status(200).json("Post subscribers updated.");
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
 };
 
 exports.delete_post = async function(req, res, next) {

@@ -11,8 +11,8 @@ const { createEditBedSchema, rolesSchema, bedIdSchema, membersSchema, gridmapSch
 const { vegSchema, returningWhatSchema, vegIdSchema, searchVegSchema } = require("../schemas/vegSchemas");
 const { notificationIdSchema, updateNotificationSchema, addNotificationSchema } = require("../schemas/notificationSchema");
 const { eventBedIdSchema, addEventSchema, deleteEventSchema } = require("../schemas/eventSchemas");
-const { postSchema, postIdSchema, updateReactionsSchema } = require("../schemas/postSchemas");
-const { commentPostIdSchema, commentContentSchema, commentIdSchema } = require("../schemas/commentSchemas");
+const { postSchema, postIdSchema, updateSubscribersSchema, updateReactionsSchema } = require("../schemas/postSchemas");
+const { commentPostIdSchema, commentContentSchema, commentIdSchema, commentTopPostIdSchema } = require("../schemas/commentSchemas");
 
 const userController = require("../controllers/userController");
 const bedController = require("../controllers/bedController");
@@ -166,15 +166,17 @@ router.post("/add-post/:bedid", checkSchema(postSchema, ["body"]), checkSchema(p
 
 router.patch("/update-post/:id", checkSchema(postSchema, ["body"]), checkSchema(postIdSchema, ["params"]), accessValidatorResults, postsController.update_post);
 
+router.patch("/update-subscribers/:postid/:userid", checkSchema(updateSubscribersSchema, ["params"]), accessValidatorResults, postsController.update_subscribers);
+
 router.delete("/delete-post/:id", checkSchema(postIdSchema, ["params"]), accessValidatorResults, postsController.delete_post);
 
-router.patch("/update-reactions/:table/:id", checkSchema(updateReactionsSchema, ["params", "body"]), postsController.update_reactions);
+router.patch("/update-reactions/:table/:id", checkSchema(updateReactionsSchema, ["params", "body"]), accessValidatorResults, postsController.update_reactions);
 
 
 /// COMMENT ENDPOINTS ///
 router.get("/pull-comments/:postid", checkSchema(commentPostIdSchema, ["params"]), accessValidatorResults, commentsController.pull_comments);
 
-router.post("/add-comment/:postid", checkSchema(commentPostIdSchema, ["params"]), checkSchema(commentContentSchema, ["body"]), checkSchema(commentIdSchema, ["body"]), accessValidatorResults, commentsController.add_comment);
+router.post("/add-comment/:postid", checkSchema(commentPostIdSchema, ["params"]), checkSchema(commentContentSchema, ["body"]), checkSchema(commentIdSchema, ["body"]), checkSchema(commentTopPostIdSchema, ["body"]), accessValidatorResults, commentsController.add_comment);
 
 router.patch("/update-comment/:id", checkSchema(commentIdSchema, ["params"]), checkSchema(commentContentSchema, ["body"]), accessValidatorResults, commentsController.update_comment);
 
