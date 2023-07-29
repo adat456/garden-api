@@ -58,6 +58,13 @@ exports.update_bed = async function(req, res, next) {
     const gridmapJSON = JSON.stringify(gridmap);
       
     try {
+      /// AUTHENTICATION: that it is the bed creator
+      const getBedCreatorsUsername = await pool.query(
+        "SELECT username FROM garden_beds WHERE id = ($1)",
+        [bedid]
+      );
+      if (getBedCreatorsUsername?.rows[0]?.username !== res.locals.username) throw new Error("You are not the creator of this garden bed and do not have permission to make updates.");
+
       const updateBedReq = await pool.query(
         "UPDATE garden_beds SET hardiness = ($1), sunlight = ($2), soil = ($3), whole = ($4), length = ($5), width = ($6), gridmap = ($7), name = ($8), public = ($9) WHERE id = ($10)",
         [hardiness, sunlight, soil, whole, length, width, gridmapJSON, name, public, bedid]
@@ -74,6 +81,13 @@ exports.update_gridmap = async function(req, res, next) {
   const gridmapJSON = JSON.stringify(gridmap);
 
   try {
+    /// AUTHENTICATION: that it is the bed creator
+    const getBedCreatorsUsername = await pool.query(
+      "SELECT username FROM garden_beds WHERE id = ($1)",
+      [bedid]
+    );
+    if (getBedCreatorsUsername?.rows[0]?.username !== res.locals.username) throw new Error("You are not the creator of this garden bed and do not have permission to make updates.");
+
     const req = await pool.query(
       "UPDATE garden_beds SET gridmap = ($1) WHERE id = ($2)",
       [gridmapJSON, bedid]
@@ -121,6 +135,13 @@ exports.delete_bed = async function(req, res, next) {
     const { bedid } = res.locals.validatedData;
   
     try {
+      /// AUTHENTICATION: that it is the bed creator
+      const getBedCreatorsUsername = await pool.query(
+        "SELECT username FROM garden_beds WHERE id = ($1)",
+        [bedid]
+      );
+      if (getBedCreatorsUsername?.rows[0]?.username !== res.locals.username) throw new Error("You are not the creator of this garden bed and do not have permission to make updates.");
+
       const deleteReq = await pool.query(
         "DELETE FROM garden_beds WHERE id = ($1)",
         [bedid]

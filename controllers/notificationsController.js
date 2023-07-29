@@ -22,7 +22,6 @@ exports.pull_notifications = async function(req, res, next) {
 
 exports.add_notification = async function(req, res, next) {
     const { senderid, sendername, senderusername, recipientid, dispatched, type, bedid, bedname, eventid, eventname, eventdate, rsvpdate } = res.locals.validatedData;  
-    console.log(res.locals.validatedData);   
   
     try {
       const addNotificationReq = await pool.query(
@@ -31,7 +30,11 @@ exports.add_notification = async function(req, res, next) {
       );
   
       // notifies recipient via socket of a new notification, which will then prompt manual refetching of notifications and other data
-      req.io.emit(`notifications-${recipientid}`, type);
+      if (type === "rsvpinvite" || type === "rsvpconfirmation") {
+        req.io.emit(`notifications-${recipientid}`, type, bedid);
+      } else {
+        req.io.emit(`notifications-${recipientid}`, type);
+      };
   
       // updating member status in bed upon confirmation
       if (type === "memberconfirmation" && bedid) {
@@ -44,7 +47,7 @@ exports.add_notification = async function(req, res, next) {
           if (member.id !== senderid) {
             return member;
           } else {
-            const date = new Date().toString();
+            const date = new Date().toISOString().slice(0, 10);
             return {...member, status: "accepted", finaldate: date};
           };
         });
@@ -97,6 +100,13 @@ exports.update_notification = async function(req, res, next) {
     const { notifid, read, responded } = res.locals.validatedData;
     
     try {
+      /// AUTHENTICATION: that it is the event creator
+      const getNotificationRecipientReq = await pool.query(
+        "SELECT recipientid FROM notifications WHERE recipientid = ($1)",
+        [res.locals.user.id]
+      );
+      if (getNotificationRecipientReq?.rows[0]?.recipientid !== res.locals.user.id) throw new Error("You do not have permission to update this notification as you are not the intended recipient.");
+
       const req = await pool.query(
         "UPDATE notifications SET read = ($1), responded = ($2) WHERE id = ($3)",
         [read, responded, notifid]
@@ -112,6 +122,13 @@ exports.delete_notification = async function(req, res, next) {
     const { notifid } = res.locals.validatedData;
     
     try {
+      /// AUTHENTICATION: that it is the event creator
+      const getNotificationRecipientReq = await pool.query(
+        "SELECT recipientid FROM notifications WHERE recipientid = ($1)",
+        [res.locals.user.id]
+      );
+      if (getNotificationRecipientReq?.rows[0]?.recipientid !== res.locals.user.id) throw new Error("You do not have permission to delete this notification as you are not the intended recipient.");
+
       const req = await pool.query(
         "DELETE FROM notifications WHERE id = ($1)",
         [notifid]

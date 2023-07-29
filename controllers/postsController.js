@@ -1,4 +1,3 @@
-const { validationResult, matchedData } = require("express-validator");
 const { Pool } = require("pg");
 const pool = new Pool({
     user: process.env.PSQL_USER,
@@ -8,6 +7,7 @@ const pool = new Pool({
     host: "localhost",
 });
 
+// pre-authorized by pulling of beds data
 exports.pull_posts = async function(req, res, next) {
     let { bedid } = req.params;
     bedid = Number(bedid);
@@ -53,20 +53,18 @@ exports.update_post = async function(req, res, next) {
     const edited = new Date();
   
     try {
+      /// AUTHENTICATION: that it is the post creator
       const getPostReq = await pool.query(
         "SELECT * FROM posts WHERE id = ($1)",
         [id]
       );
-      const postAuthorUsername = getPostReq.rows[0].authorusername;
-      if (postAuthorUsername === res.locals.username) {
-        const updatePostReq = await pool.query(
-          "UPDATE posts SET title = ($1), content = ($2), edited = ($3), pinned = ($4) WHERE id = ($5)",
-          [title, content, edited, pinned, id]
-        );
-        res.status(200).json("Post successfully updated.");
-      } else {
-        throw new Error("You do not have permission to edit this post as you are not the original author.");
-      };
+      if (getPostReq?.rows[0]?.authorusername !== res.locals.username) throw new Error("You do not have permission to edit this post as you are not the author.");
+
+      const updatePostReq = await pool.query(
+        "UPDATE posts SET title = ($1), content = ($2), edited = ($3), pinned = ($4) WHERE id = ($5)",
+        [title, content, edited, pinned, id]
+      );
+      res.status(200).json("Post successfully updated.");
     } catch(err) {
       console.log(err.message);
       res.status(404).json(err.message);
@@ -96,30 +94,6 @@ exports.update_subscribers = async function(req, res, next) {
     console.log(err.message);
     res.status(404).json(err.message);
   };
-};
-
-exports.delete_post = async function(req, res, next) {
-    const { id } = res.locals.validatedData;
-  
-    try {
-      const getPostReq = await pool.query(
-        "SELECT * FROM posts WHERE id = ($1)",
-        [id]
-      );
-      const postAuthorUsername = getPostReq.rows[0].authorusername;
-      if (postAuthorUsername === res.locals.username) {
-        const deletePostReq = await pool.query(
-          "DELETE FROM posts WHERE id = ($1)",
-          [id]
-        );
-        res.status(200).json("Post successfully deleted.");
-      } else {
-        throw new Error("You do not have permission to delete this post as you are not the original author.");
-      };
-    } catch(err) {
-      console.log(err.message);
-      res.status(404).json(err.message);
-    };
 };
 
 exports.update_reactions = async function(req, res, next) {
@@ -157,4 +131,26 @@ exports.update_reactions = async function(req, res, next) {
     console.log(err.message);
     res.status(404).json(err.message);
   };
+};
+
+exports.delete_post = async function(req, res, next) {
+    const { id } = res.locals.validatedData;
+  
+    try {
+      /// AUTHENTICATION: that it is the post creator
+      const getPostReq = await pool.query(
+        "SELECT * FROM posts WHERE id = ($1)",
+        [id]
+      );
+      if (getPostReq?.rows[0]?.authorusername !== res.locals.username) throw new Error("You do not have permission to delete this post as you are not the author.");
+
+      const deletePostReq = await pool.query(
+        "DELETE FROM posts WHERE id = ($1)",
+        [id]
+      );
+      res.status(200).json("Post successfully deleted.");
+    } catch(err) {
+      console.log(err.message);
+      res.status(404).json(err.message);
+    };
 };

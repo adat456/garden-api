@@ -39,6 +39,13 @@ exports.update_veg_data = async function(req, res, next) {
     const { name, description, depth, fruitSize, growthConditions: growthConditionsArr, sowingMethod: sowingMethodArr, growthHabit: growthHabitArr, spacingArr, dtmArr, heightArr, hardiness, water, light, lifecycle, plantingSzn, privateData, vegid } = res.locals.validatedData;
   
     try {
+      /// AUTHENTICATION: that it is the veg creator
+      const getVegContributorReq = await pool.query(
+        "SELECT contributor FROM veg_data_users WHERE contributor = ($1)",
+        [res.locals.username]
+      );
+      if (getVegContributorReq?.rows[0]?.contributor !== res.locals.username) throw new Error("You do not have permission to update this seed data as you are not the original contributor.");
+
        const updateVegReq = await pool.query(
         "UPDATE veg_data_users SET name = ($1), description = ($2), plantingseason = ($3), fruitsize = ($4), growthhabit = ($5), growconditions = ($6), sowingmethod = ($7), light = ($8), depth = ($9), heightin = ($10), spacingin = ($11), water = ($12), hardiness = ($13), daystomaturity = ($14), lifecycle = ($15), privatedata = ($16) WHERE id = ($17)",
         [name, description, plantingSzn, fruitSize, growthHabitArr, growthConditionsArr, sowingMethodArr, light, depth, heightArr, spacingArr, water, hardiness, dtmArr, lifecycle, privateData, vegid]

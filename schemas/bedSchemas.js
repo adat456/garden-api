@@ -218,8 +218,8 @@ exports.membersSchema = {
     },
     '**.finaldate': {
         optional: false,
-        isDate: {
-            errorMessage: "Finalized status date required."
+        isISO8601: {
+            errorMessage: "Finalized date required, must be formatted as YYYY-MM-DD."
         },
     },
 };

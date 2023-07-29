@@ -81,20 +81,18 @@ exports.update_comment = async function(req, res, next) {
     const edited = new Date();
   
     try {
+      /// AUTHENTICATION: that it is the comment creator
       const getCommentReq = await pool.query(
         "SELECT * FROM comments WHERE id = ($1)",
         [id]
       );
-      const commentAuthorUsername = getCommentReq.rows[0].authorusername;
-      if (commentAuthorUsername === res.locals.username) {
-        const updateCommentReq = await pool.query(
-          "UPDATE comments SET content = ($1), edited = ($2) WHERE id = ($3)",
-          [content, edited, id]
-        );
-        res.status(200).json("Comment successfully updated.");
-      } else {
-        throw new Error("You do not have permission to edit this comment as you are not the original author.");
-      };
+      if (getCommentReq?.rows[0]?.authorusernamee !== res.locals.username) throw new Error("You do not have permission to edit this comment as you are not the original author.");
+      
+      const updateCommentReq = await pool.query(
+        "UPDATE comments SET content = ($1), edited = ($2) WHERE id = ($3)",
+        [content, edited, id]
+      );
+      res.status(200).json("Comment successfully updated.");
     } catch(err) {
       console.log(err.message);
       res.status(404).json(err.message);
@@ -105,20 +103,18 @@ exports.delete_comment = async function(req, res, next) {
     const { id } = res.locals.validatedData;
   
     try {
+      /// AUTHENTICATION: that it is the comment creator
       const getCommentReq = await pool.query(
         "SELECT * FROM comments WHERE id = ($1)",
         [id]
       );
-      const commentAuthorUsername = getCommentReq.rows[0].authorusername;
-      if (commentAuthorUsername === res.locals.username) {
-        const deleteCommentReq = await pool.query(
-          "DELETE FROM comments WHERE id = ($1)",
-          [id]
-        );
-        res.status(200).json("Comment successfully deleted.");
-      } else {
-        throw new Error("You do not have permission to delete this comment as you are not the original author.");
-      };
+      if (getCommentReq?.rows[0]?.authorusernamee !== res.locals.username) throw new Error("You do not have permission to edit this comment as you are not the original author.");
+
+      const deleteCommentReq = await pool.query(
+        "DELETE FROM comments WHERE id = ($1)",
+        [id]
+      );
+      res.status(200).json("Comment successfully deleted.");
     } catch(err) {
       console.log(err.message);
       res.status(404).json(err.message);

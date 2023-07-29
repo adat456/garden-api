@@ -1,4 +1,3 @@
-const { validationResult, matchedData } = require("express-validator");
 const { Pool } = require("pg");
 const pool = new Pool({
     user: process.env.PSQL_USER,
@@ -12,11 +11,40 @@ exports.pull_events = async function(req, res, next) {
     const { bedid } = res.locals.validatedData;
   
     try {
-      const req = await pool.query(
-        "SELECT * FROM events WHERE bedid = ($1)",
+      // get all public events
+      const allPublicEventsReq = await pool.query(
+        "SELECT * FROM events WHERE bedid = ($1) AND eventpublic = ($2)",
+        [bedid, "public"]
+      );
+      
+      /// AUTHORIZATION - necessary regardless of whether you're a member (even though there is also client side filtering)
+      let privateEvents = [];
+      const bedInfoReq = await pool.query(
+        "SELECT username, members FROM garden_beds WHERE id = ($1)",
         [bedid]
       );
-      res.status(200).json(req.rows);
+      const { username, members } = bedInfoReq.rows[0];
+      // pulls all private events (non-"public") if you're the bed creator
+      if (username === res.locals.username) {
+        const allPrivateEventsReq = await pool.query(
+          "SELECT * FROM events WHERE bedid = ($1) AND eventpublic <> ($2)",
+          [bedid, "public"]
+        );
+        privateEvents = allPrivateEventsReq.rows;
+      } else if (members.find(member => member.username === res.locals.username)) {
+        // if not a creator but a member, pulls all "allmembers" events AND all "somemembers" events where the username matches
+        const allBedMembersEventsReq = await pool.query(
+          "SELECT * FROM events WHERE bedid = ($1) AND eventpublic = ($2)",
+          [bedid, "allmembers", ]
+        );
+        const someBedMembersEventsReq = await pool.query(
+          "SELECT * FROM events WHERE bedid = ($1) AND eventpublic = ($2) and eventparticipants::JSONB @> ($3)",
+          [bedid, "somemembers", JSON.stringify([{ "username": res.locals.username }])]
+        );
+        privateEvents = [...allBedMembersEventsReq.rows, ...someBedMembersEventsReq.rows];
+      };
+      
+      res.status(200).json([...allPublicEventsReq.rows, ...privateEvents]);
     } catch(err) {
       console.log(err.message);
       res.status(404).json(err.message);
@@ -61,6 +89,13 @@ exports.delete_event = async function(req, res, next) {
     // repeatid will either be "undefined" (comes in as a string on account of it being a param) or a "string", so if repeatid is not "undefined" then delete all counterparts
   
     try {
+      /// AUTHENTICATION: that it is the event creator
+      const getEventReq = await pool.query(
+        "SELECT * FROM events WHERE id = ($1)",
+        [eventid]
+      );
+      if (getEventReq?.rows[0]?.creatorusername !== res.locals.username) throw new Error("You do not have permission to delete this event as you are not the original creator.");
+
       if (repeatid !== "undefined") {
         const req = await pool.query(
           "DELETE FROM events WHERE repeatid = ($1)",
