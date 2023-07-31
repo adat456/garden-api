@@ -7,6 +7,8 @@ const pool = new Pool({
     host: "localhost",
 });
 
+const { addPermissionsLog, deletePermissionsLog } = require("./permissionsController");
+
 exports.pull_beds_data = async function(req, res, next) {
     try {
       // returns all boards where user is the creator...
@@ -104,6 +106,50 @@ exports.update_roles = async function(req, res, next) {
   const rolesJSON = JSON.stringify(roles);
 
   try {
+    const previousRolesReq = await pool.query(
+      "SELECT roles FROM garden_beds WHERE id = ($1)",
+      [bedid]
+    );
+    const previousRoles = previousRolesReq.rows[0].roles;
+    const existingPermissionsLogReq = await pool.query(
+      "SELECT * FROM permissions WHERE bedid = ($1)",
+      [bedid]
+    );
+    const numExistingPermissionsLog = existingPermissionsLogReq.rowCount;
+
+    // if the first role was added and there is no existing permissions log, create a permissions log
+    if (previousRoles.length === 0 && roles.length > 0 && numExistingPermissionsLog === 0) {
+      addPermissionsLog(bedid, res.locals.user.id);
+    };
+    // if the last role was deleted and there is an existing permissions log, remove the permissions log
+    if (previousRoles.length > 0 && roles.length === 0 && numExistingPermissionsLog > 0) {
+      deletePermissionsLog(bedid);
+    };
+    // if a role was removed (previous roles array length is one less than the current roles array length), then remove their id from all role arrays
+    if (previousRoles.length > roles.length) {
+      let removedRoleID;
+      previousRoles.forEach(previousRole => {
+        const match = roles.find(role => role.id === previousRole.id);
+        if (!match) removedRoleID = previousRole.id;
+      });
+
+      const pullAllRolePermissions = await pool.query(
+        "SELECT fullpermissionsroleids, memberspermissionroleids, rolespermissionroleids, eventspermissionroleids, tagspermissionroleids, postspermissionroleids, postinteractionspermissionroleids FROM permissions WHERE bedid = ($1)",
+        [bedid],
+      );
+      let allRolePermissionsArrArr = Object.values(pullAllRolePermissions.rows[0]);
+      let updatedRolePermissionsArrArr = []; // an array of arrays, which will be spread
+      // filtering out the removedRoleID
+      allRolePermissionsArrArr.forEach(permissionsArr => {
+        updatedRolePermissionsArrArr.push(permissionsArr.filter(id => id !== removedRoleID));
+      });
+      const updateAllRolePermissions = await pool.query(
+        "UPDATE permissions SET fullpermissionsroleids = ($1), memberspermissionroleids = ($2), rolespermissionroleids = ($3), eventspermissionroleids = ($4), tagspermissionroleids = ($5), postspermissionroleids = ($6), postinteractionspermissionroleids = ($7) WHERE bedid = ($8)",
+        [...updatedRolePermissionsArrArr, bedid]
+      );
+    };
+
+    // NOW ACTUALLY UDPATE THE ROLES
     const updateRolesReq = await pool.query(
       "UPDATE garden_beds SET roles = ($1) WHERE id = ($2)",
       [rolesJSON, bedid]
@@ -120,6 +166,50 @@ exports.update_members = async function(req, res, next) {
   const membersJSON = JSON.stringify(members);
 
   try {
+    const previousMembersReq = await pool.query(
+      "SELECT members FROM garden_beds WHERE id = ($1)",
+      [bedid]
+    );
+    const previousMembers = previousMembersReq.rows[0].members;
+    const existingPermissionsLogReq = await pool.query(
+      "SELECT * FROM permissions WHERE bedid = ($1)",
+      [bedid]
+    );
+    const numExistingPermissionsLogs = existingPermissionsLogReq.rowCount;
+
+    // if the first member was added and there is no existing permissions log, create a permissions log
+    if (previousMembers.length === 0 && members.length > 0 && numExistingPermissionsLogs === 0) {
+      addPermissionsLog(bedid, res.locals.user.id);
+    };
+    // if the last member was deleted and there is an existing permissions log, remove the permissions log
+    if (previousMembers.length > 0 && members.length === 0 && numExistingPermissionsLogs > 0) {
+      deletePermissionsLog(bedid);
+    };
+    // if a member were removed (previous members array length is one less than the current members array length), then remove their id from all member arrays
+    if (previousMembers.length > members.length) {
+      let removedMemberID;
+      previousMembers.forEach(previousMember => {
+        const match = members.find(member => member.id === previousMember.id);
+        if (!match) removedMemberID = previousMember.id;
+      });
+
+      const pullAllMemberPermissions = await pool.query(
+        "SELECT fullpermissionsmemberids, memberspermissionmemberids, rolespermissionmemberids, eventspermissionmemberids, tagspermissionmemberids, postspermissionmemberids, postinteractionspermissionmemberids FROM permissions WHERE bedid = ($1)",
+        [bedid],
+      );
+      let allMemberPermissionsArrArr = Object.values(pullAllMemberPermissions.rows[0]);
+      let updatedMemberPermissionsArrArr = []; // an array of arrays, which will be spread
+      // filtering out the removedMemberID
+      allMemberPermissionsArrArr.forEach(permissionsArr => {
+        updatedMemberPermissionsArrArr.push(permissionsArr.filter(id !== removedMemberID));
+      });
+      const updateAllMemberPermissions = await pool.query(
+        "UPDATE permissions SET fullpermissionsmemberids = ($1), memberspermissionmemberids = ($2), rolespermissionmemberids = ($3), eventspermissionmemberids = ($4), tagspermissionmemberids = ($5), postspermissionmemberids = ($6), postinteractionspermissionmemberids = ($7) WHERE bedid = ($8)",
+        [...updatedMemberPermissionsArrArr, bedid]
+      );
+    };
+    
+    // NOW ACTUALLY UPDATE THE MEMBERS
     const updateMembersReq = await pool.query(
       "UPDATE garden_beds SET members = ($1) WHERE id = ($2)",
       [membersJSON, bedid]

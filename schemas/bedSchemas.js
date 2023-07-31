@@ -275,6 +275,12 @@ exports.gridmapSchema = {
 };
 
 exports.rolesSchema = {
+    roles: {
+        optional: false,
+        isArray: {
+            errorMessage: "Roles must be described by an array."
+        },
+    },
     '**.title': {
         optional: false,
         trim: true,
