@@ -8,6 +8,7 @@ const { checkSchema, validationResult, matchedData } = require("express-validato
 
 const { findUsersSchema } = require("../schemas/userSchema");
 const { createEditBedSchema, rolesSchema, bedIdSchema, membersSchema, gridmapSchema, dateOfBedCreationSchema, copyBedSchema } = require ("../schemas/bedSchemas");
+const { pullPermissionsLogSchema, updatePermissionsLogSchema } = require ("../schemas/permissionsSchema");
 const { vegSchema, returningWhatSchema, vegIdSchema, searchVegSchema } = require("../schemas/vegSchemas");
 const { notificationIdSchema, updateNotificationSchema, addNotificationSchema } = require("../schemas/notificationSchema");
 const { eventBedIdSchema, addEventSchema, deleteEventSchema } = require("../schemas/eventSchemas");
@@ -16,6 +17,7 @@ const { commentPostIdSchema, commentContentSchema, commentIdSchema, commentTopPo
 
 const userController = require("../controllers/userController");
 const bedController = require("../controllers/bedController");
+const permissionsController = require("../controllers/permissionsController");
 const vegController = require("../controllers/vegController");
 const notificationsController = require("../controllers/notificationsController");
 const eventsController = require("../controllers/eventsController");
@@ -120,6 +122,10 @@ router.patch("/update-members/:bedid", checkSchema(membersSchema, ["body"]), che
 
 router.delete("/delete-bed/:bedid", checkSchema(bedIdSchema, ["params"]), accessValidatorResults, bedController.delete_bed);
 
+/// PERMISSIONS ENDPOINTS ///
+router.get("/pull-permissions-log/:bedid", checkSchema(pullPermissionsLogSchema, ["params"]), accessValidatorResults, permissionsController.pull_permissions_log);
+
+router.patch("/update-permissions-log/:bedid", checkSchema(pullPermissionsLogSchema, ["params"]), checkSchema(updatePermissionsLogSchema, ["body"]), accessValidatorResults, permissionsController.update_permissions_log);
 
 /// PUBLIC BED ENDPOINTS ///
 router.get("/all-public-beds", accessValidatorResults, bedController.pull_all_public_beds);

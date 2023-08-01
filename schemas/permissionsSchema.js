@@ -1,12 +1,12 @@
 function isAcceptablePermissionValue(value) {
     const acceptableValues = [
-        fullpermissions,
-        memberspermission,
-        rolespermission,
-        eventspermission,
-        tagspermission,
-        postspermission,
-        postinteractionspermission
+        "fullpermissions",
+        "memberspermission",
+        "rolespermission",
+        "eventspermission",
+        "tagspermission",
+        "postspermission",
+        "postinteractionspermission"
     ];
     if (acceptableValues.includes(value)) {
         return true;
@@ -30,15 +30,15 @@ function isNanoIdLength(value) {
 
 function isAcceptableIdValue(value, {req}) {
     let returnValue;
-    if (req.body.group === "member") {
-        returnValue = isInt(value);
-    } else if (req.body.group === "role") {
+    if (req.body.permissions.group === "member") {
+        returnValue = typeof value === "number";
+    } else if (req.body.permissions.group === "role") {
         returnValue = isNanoIdLength(value);
     };
     return returnValue;
 };
 
-exports.togglePermissionsSchema = {
+exports.pullPermissionsLogSchema = {
     bedid: {
         optional: false,
         isInt: {
@@ -46,25 +46,28 @@ exports.togglePermissionsSchema = {
         },
         toInt: true,
     },
-    permission: {
+};
+
+exports.updatePermissionsLogSchema = {
+    'permissions.permission': {
         optional: false,
         checkIsAcceptablePermissionValue: {
             custom: isAcceptablePermissionValue,
             errorMessage: "Permissions category must be one of the pre-defined permissions values.",
         },
     },
-    group: {
+    'permissions.group': {
         optional: false,
         checkIsAcceptableGroupValue: {
             custom: isAcceptableGroupValue,
             errorMessage: "Group must be one of the pre-defined values."
         },
     },
-    id: {
+    'permissions.id': {
         optional: false,
         checkIsAcceptableId: {
             custom: isAcceptableIdValue,
-            errorMessage: "Id must be either a string (if a role ID) or an integer (if a user ID).",
+            errorMessage: "ID must be either a string (if a role ID) or an integer (if a user ID).",
         },
         toInt: {
             if: (value, {req}) => req.body.group === "member"

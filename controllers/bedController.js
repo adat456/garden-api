@@ -7,7 +7,7 @@ const pool = new Pool({
     host: "localhost",
 });
 
-const { addPermissionsLog, deletePermissionsLog } = require("./permissionsController");
+const { createPermissionsLog } = require("./permissionsController");
 
 exports.pull_beds_data = async function(req, res, next) {
     try {
@@ -43,12 +43,15 @@ exports.create_bed = async function(req, res, next) {
     try {
       // create the new bed and retrive its id
       const addNewBedReq = await pool.query(
-        "INSERT INTO garden_beds (hardiness, sunlight, soil, whole, length, width, gridmap, name, public, created, username, numhearts, numcopies, seedbasket, members, roles, eventtags) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *",
+        "INSERT INTO garden_beds (hardiness, sunlight, soil, whole, length, width, gridmap, name, public, created, username, numhearts, numcopies, seedbasket, members, roles, eventtags) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id",
         [hardiness, sunlight, soil, whole, length, width, gridmapJSON, name, public, created, res.locals.username, [], [], JSON.stringify([]), JSON.stringify([]), JSON.stringify([]), []]
       );
-      const newBoard = addNewBedReq.rows[0];
+      const newBed = addNewBedReq.rows[0];
+
+      const bedid = newBed.id;
+      createPermissionsLog(bedid, res.locals.user.id);
   
-      res.status(200).json(newBoard);
+      res.status(200).json(newBed);
     } catch(err) {
       console.log(err.message);
       res.status(404).json(err.message);
@@ -111,20 +114,7 @@ exports.update_roles = async function(req, res, next) {
       [bedid]
     );
     const previousRoles = previousRolesReq.rows[0].roles;
-    const existingPermissionsLogReq = await pool.query(
-      "SELECT * FROM permissions WHERE bedid = ($1)",
-      [bedid]
-    );
-    const numExistingPermissionsLog = existingPermissionsLogReq.rowCount;
 
-    // if the first role was added and there is no existing permissions log, create a permissions log
-    if (previousRoles.length === 0 && roles.length > 0 && numExistingPermissionsLog === 0) {
-      addPermissionsLog(bedid, res.locals.user.id);
-    };
-    // if the last role was deleted and there is an existing permissions log, remove the permissions log
-    if (previousRoles.length > 0 && roles.length === 0 && numExistingPermissionsLog > 0) {
-      deletePermissionsLog(bedid);
-    };
     // if a role was removed (previous roles array length is one less than the current roles array length), then remove their id from all role arrays
     if (previousRoles.length > roles.length) {
       let removedRoleID;
@@ -171,21 +161,8 @@ exports.update_members = async function(req, res, next) {
       [bedid]
     );
     const previousMembers = previousMembersReq.rows[0].members;
-    const existingPermissionsLogReq = await pool.query(
-      "SELECT * FROM permissions WHERE bedid = ($1)",
-      [bedid]
-    );
-    const numExistingPermissionsLogs = existingPermissionsLogReq.rowCount;
 
-    // if the first member was added and there is no existing permissions log, create a permissions log
-    if (previousMembers.length === 0 && members.length > 0 && numExistingPermissionsLogs === 0) {
-      addPermissionsLog(bedid, res.locals.user.id);
-    };
-    // if the last member was deleted and there is an existing permissions log, remove the permissions log
-    if (previousMembers.length > 0 && members.length === 0 && numExistingPermissionsLogs > 0) {
-      deletePermissionsLog(bedid);
-    };
-    // if a member were removed (previous members array length is one less than the current members array length), then remove their id from all member arrays
+    // if a member was removed (previous members array length is one less than the current members array length), then remove their id from all member arrays
     if (previousMembers.length > members.length) {
       let removedMemberID;
       previousMembers.forEach(previousMember => {

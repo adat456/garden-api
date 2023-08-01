@@ -6,6 +6,7 @@ const pool = new Pool({
     port: process.env.PSQL_PORT,
     host: "localhost",
 });
+const format = require("pg-format");
 
 exports.pull_permissions_log = async function(req, res, next) {
     const { bedid } = res.locals.validatedData;
@@ -24,23 +25,27 @@ exports.pull_permissions_log = async function(req, res, next) {
 
 exports.update_permissions_log = async function(req, res, next) {
     // e.g., permissions = "fullpermissions", group = "member" or "role"
-    const { bedid, permission, group, id } = res.locals.validatedData;
+    const { bedid, permissions } = res.locals.validatedData;
+    const { permission, group, id } = permissions;
 
     try {
-        const getCurrentListOfIds = await pool.query(
-            "SELECT ($1) FROM permissions WHERE bedid = ($2)",
-            [`${permission}${group}ids`, bedid]
-        );
+        const getIdsSQLQuery = format("SELECT %s FROM permissions WHERE bedid = %s", `${permission}${group}ids`, bedid);
+        const getCurrentListOfIds = await pool.query(getIdsSQLQuery);
+
         let currentListOfIds = getCurrentListOfIds.rows[0][`${permission}${group}ids`];
         if (currentListOfIds.includes(id)) {
             currentListOfIds = currentListOfIds.filter(listId => listId !== id);
         } else {
             currentListOfIds = [...currentListOfIds, id];
         };
+
+        const updateIdsSQLQuery = format("UPDATE permissions SET %s = ($1) WHERE bedid = %s", `${permission}${group}ids`, bedid);
+        console.log(updateIdsSQLQuery);
         const updateListOfIds = await pool.query(
-            "UPDATE permissions SET ($1) = ($2) WHERE bedid = ($3)",
-            [`${permission}${group}ids`, currentListOfIds, bedid]
+            updateIdsSQLQuery,
+            [currentListOfIds]
         );
+        res.status(200).json("Updated.");
     } catch(err) {
         console.log(err.message);
         res.status(404).json(err.message);
@@ -49,23 +54,11 @@ exports.update_permissions_log = async function(req, res, next) {
 
 // NOT ROUTES, but FUNCTIONS TO BE INCLUDED WHEN UPDATING MEMBERS
 
-exports.addPermissionsLog = async function(bedid, creatorid) {
+exports.createPermissionsLog = async function(bedid, creatorid) {
     try {
         const addPermissionsLogReq = await pool.query(
             "INSERT INTO permissions (bedid, creatorid) VALUES ($1, $2)",
             [bedid, creatorid]
-        );
-    } catch(err) {
-        console.log(err.message);
-        res.status(404).json(err.message);
-    };
-};
-
-exports.deletePermissionsLog = async function(bedid) {
-    try {
-        const deletePermissionsLogReq = await pool.query(
-            "DELETE FROM permissions WHERE bedid = ($1)",
-            [bedid]
         );
     } catch(err) {
         console.log(err.message);
