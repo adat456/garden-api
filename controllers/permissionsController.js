@@ -8,6 +8,51 @@ const pool = new Pool({
 });
 const format = require("pg-format");
 
+exports.pull_personal_permissions = async function(req, res, next) {
+    const { bedid } = res.locals.validatedData;
+
+    let userPermissions = [];
+    try {
+        const bedMembersReq = await pool.query(
+        "SELECT username, members FROM garden_beds WHERE id = ($1)",
+        [bedid]
+        );
+        const { username, members } = bedMembersReq.rows[0];
+
+        if (username === res.locals.user.username) {
+            userPermissions.push("fullpermissions");
+        } else {
+            // finding an assigned role id, if any 
+            const userMatch = members.find(member => member.id === res.locals.user.id);
+            if (!userMatch) throw new Error("You do not have permission to view or edit this board.");
+            const userRoleId = userMatch.role;
+
+            const permissionsLogReq = await pool.query(
+                "SELECT * FROM permissions WHERE bedid = ($1)",
+                [bedid]
+            );
+            const permissionsLog = permissionsLogReq.rows[0];
+            delete permissionsLog.bedid;
+            delete permissionsLog.creatorid;
+            const permissionsLogArr = Object.entries(permissionsLog);
+
+            permissionsLogArr.forEach(permissionsArr => {
+                if (permissionsArr[0].includes("memberids") && permissionsArr[1].includes(res.locals.user.id)) {
+                    userPermissions.push(permissionsArr[0].slice(0, -9));
+                };
+                if (permissionsArr[0].includes("roleids") && permissionsArr[1].includes(userRoleId)) {
+                    userPermissions.push(permissionsArr[0].slice(0, -7));
+                };
+            });
+        };
+
+        res.status(200).json(userPermissions);
+    } catch(err) {
+        console.log(err.message);
+        res.status(400).json(err.message);
+    };
+};
+
 exports.pull_permissions_log = async function(req, res, next) {
     try {
         // auth

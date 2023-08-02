@@ -29,7 +29,7 @@ exports.postSchema = {
         }
     },
     pinned: {
-        optional: false,
+        optional: true,
         trim: true,
         isBoolean: {
             errorMessage: "Pinned status must be either true or false."

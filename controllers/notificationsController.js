@@ -57,6 +57,19 @@ exports.add_notification = async function(req, res, next) {
           "UPDATE garden_beds SET members = ($1) WHERE id = ($2)",
           [members, bedid]
         );
+
+        // also give sender default permission to make and interact w/ posts by default
+        const getPermissionsArrs = await pool.query(
+          "SELECT postspermissionmemberids, postinteractionspermissionmemberids FROM permissions WHERE bedid = ($1)",
+          [bedid]
+        );
+        let { postspermissionmemberids, postinteractionspermissionmemberids } = getPermissionsArrs.rows[0];
+        postspermissionmemberids = [...postspermissionmemberids, senderid];
+        postinteractionspermissionmemberids = [...postinteractionspermissionmemberids, senderid];
+        const updatePermissionsArrs = await pool.query(
+          "UPDATE permissions SET postspermissionmemberids = ($1), postinteractionspermissionmemberids = ($2) WHERE bedid = ($3)",
+          [postspermissionmemberids, postinteractionspermissionmemberids, bedid]
+        );
       };
       // removing member from bed upon rejection
       if (type === "memberrejection" && bedid) {

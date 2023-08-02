@@ -111,14 +111,16 @@ exports.update_roles = async function(req, res, next) {
     );
     const previousRoles = previousRolesReq.rows[0].roles;
 
-    // if a role was removed (previous roles array length is one less than the current roles array length), then remove their id from all role arrays
+    // if a role was removed (previous roles array length is one less than the current roles array length)
     if (previousRoles.length > roles.length) {
+      // get the id of the removed role
       let removedRoleID;
       previousRoles.forEach(previousRole => {
         const match = roles.find(role => role.id === previousRole.id);
         if (!match) removedRoleID = previousRole.id;
       });
 
+      // remove deleted role id from all permissions role id arrays
       const pullAllRolePermissions = await pool.query(
         "SELECT fullpermissionsroleids, memberspermissionroleids, rolespermissionroleids, eventspermissionroleids, tagspermissionroleids, postspermissionroleids, postinteractionspermissionroleids FROM permissions WHERE bedid = ($1)",
         [bedid],
@@ -132,6 +134,20 @@ exports.update_roles = async function(req, res, next) {
       const updateAllRolePermissions = await pool.query(
         "UPDATE permissions SET fullpermissionsroleids = ($1), memberspermissionroleids = ($2), rolespermissionroleids = ($3), eventspermissionroleids = ($4), tagspermissionroleids = ($5), postspermissionroleids = ($6), postinteractionspermissionroleids = ($7) WHERE bedid = ($8)",
         [...updatedRolePermissionsArrArr, bedid]
+      );
+
+      // remove deleted role id from any members who were assigned that role
+      const getMembers = await pool.query(
+        "SELECT members FROM garden_beds WHERE id = ($1)",
+        bedid
+      );
+      const updatedMembers = getMembers.rows[0].members.map(member => {
+        if (member.role === removedRoleID) return {...member, role: ""};
+        if (member.role !== removedRoleID) return member;
+      });
+      const updateMembers = await pool.query(
+        "UPDATE garden_beds SET members = ($1) WHERE id = ($2)",
+        [JSON.stringify(updatedMembers), bedid]
       );
     };
 

@@ -169,6 +169,8 @@ router.patch("/update-members/:bedid", checkSchema(membersSchema, ["body"]), che
 router.delete("/delete-bed/:bedid", checkSchema(bedIdSchema, ["params"]), accessValidatorResults, determineUserPermissions, bedController.delete_bed);
 
 /// PERMISSIONS ENDPOINTS ///
+router.get("/pull-personal-permissions/:bedid", checkSchema(bedIdSchema, ["params"]), accessValidatorResults, permissionsController.pull_personal_permissions);
+
 router.get("/pull-permissions-log/:bedid", checkSchema(bedIdSchema, ["params"]), accessValidatorResults, determineUserPermissions, permissionsController.pull_permissions_log);
 
 router.patch("/update-permissions-log/:bedid", checkSchema(bedIdSchema, ["params"]), checkSchema(updatePermissionsLogSchema, ["body"]), accessValidatorResults, determineUserPermissions, permissionsController.update_permissions_log);
@@ -215,6 +217,8 @@ router.patch("/delete-tag/:bedid", checkSchema(bedIdSchema, ["params"]), checkSc
 router.get("/pull-posts/:bedid", checkSchema(bedIdSchema, ["params"]), accessValidatorResults, postsController.pull_posts);
 
 router.post("/add-post/:bedid", checkSchema(bedIdSchema, ["params"]), checkSchema(postSchema, ["body"]), checkSchema(postIdSchema, ["body"]), accessValidatorResults, determineUserPermissions, postsController.add_post);
+
+router.patch("/toggle-post-pin/:bedid/:postid", checkSchema(bedIdSchema, ["params"]), checkSchema(postIdSchema, ["params"]), accessValidatorResults, determineUserPermissions, postsController.toggle_post_pin);
 
 router.patch("/update-post/:bedid/:postid", checkSchema(postSchema, ["body"]), checkSchema(bedIdSchema, ["params"]), checkSchema(postIdSchema, ["params"]), accessValidatorResults, determineUserPermissions, postsController.update_post);
 

@@ -86,7 +86,7 @@ exports.update_comment = async function(req, res, next) {
   try {
     // AUTH
     // throw error if lacking both comments permissions
-    if (!res.locals.userPermissions.includes("postinteractionspermission")) {
+    if (!res.locals.userPermissions.includes("postinteractionspermission") && !res.locals.userPermissions.includes("fullpermissions"))  {
       throw new Error("You do not have permission to update comments.");
     } else {
     // throw error if comments permissions but user is not the comment creator

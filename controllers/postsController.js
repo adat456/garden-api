@@ -48,14 +48,33 @@ exports.add_post = async function (req, res, next) {
   };
 };
 
+exports.toggle_post_pin = async function(req, res, next) {
+  const { postid } = res.locals.validatedData;
+
+  try {
+    if (!res.locals.userPermissions.includes("fullpermissions")) {
+      throw new Error("You do not have permission to toggle the pinned status of this post.");
+    } else {
+      const updatePinStatus = await pool.query(
+        "UPDATE posts SET pinned = NOT pinned WHERE id = ($1)",
+        [postid]
+      );
+      res.status(200).json("Pinned status updated.");
+    };
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+}
+
 exports.update_post = async function(req, res, next) {
-  const { title, content, pinned, postid } = res.locals.validatedData;
+  const { title, content, postid } = res.locals.validatedData;
   const edited = new Date();
 
   try {
     // AUTH
     // throw error if lacking posts permissions
-    if (!res.locals.userPermissions.includes("postspermission")) {
+    if (!res.locals.userPermissions.includes("postspermission") && !res.locals.userPermissions.includes("fullpermissions")) {
       throw new Error("You do not have permission to update posts.");
     } else {
     // throw error if posts permissions but user is not the post creator
@@ -67,8 +86,8 @@ exports.update_post = async function(req, res, next) {
     };
 
     const updatePostReq = await pool.query(
-      "UPDATE posts SET title = ($1), content = ($2), edited = ($3), pinned = ($4) WHERE id = ($5)",
-      [title, content, edited, pinned, postid]
+      "UPDATE posts SET title = ($1), content = ($2), edited = ($3) WHERE id = ($4)",
+      [title, content, edited, postid]
     );
     res.status(200).json("Post successfully updated.");
   } catch(err) {
