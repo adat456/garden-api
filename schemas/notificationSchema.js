@@ -63,14 +63,6 @@ exports.addNotificationSchema = {
             errorMessage: "Notification type must be one of several pre-determined accepted values."
         },
     },
-    bedid: {
-        optional: true,
-        trim: true,
-        isInt: {
-            errorMessage: "Bed ID must be an integer/numeric value."
-        },
-        toInt: true,
-    },
     bedname: {
         optional: true,
         trim: true,

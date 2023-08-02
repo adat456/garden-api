@@ -38,7 +38,7 @@ exports.postSchema = {
 };
 
 exports.postIdSchema = {
-    id: {
+    postid: {
         optional: false,
         trim: true,
         checkLength: {

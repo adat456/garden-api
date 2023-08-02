@@ -315,16 +315,6 @@ exports.rolesSchema = {
     },
 };
 
-exports.bedIdSchema = {
-    bedid: {
-        trim: true,
-        isInt: {
-            errorMessage: "A numeric bed ID must be provided.",
-        },
-        toInt: true,
-    },
-};
-
 exports.copyBedSchema = {
     numCopies: {
         optional: false,

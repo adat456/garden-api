@@ -9,66 +9,72 @@ const pool = new Pool({
 
 // pre-authorized by pulling of beds data
 exports.pull_posts = async function(req, res, next) {
-    let { bedid } = req.params;
-    bedid = Number(bedid);
-  
-    try {
-      const pullPosts = await pool.query(
-        "SELECT * FROM posts WHERE bedid = ($1) ORDER BY posted DESC",
-        [bedid]
-      );
-      const pinnedPostsToTheFrontArr = [];
-      pullPosts.rows.forEach(post => {
-        if (post.pinned) pinnedPostsToTheFrontArr.unshift(post);
-        if (!post.pinned) pinnedPostsToTheFrontArr.push(post);
-      });
-      res.status(200).json(pinnedPostsToTheFrontArr);
-    } catch(err) {
-      console.log(err.message);
-      res.status(404).json(err.message);
-    };
+  let { bedid } = req.params;
+  bedid = Number(bedid);
+
+  try {
+    const pullPosts = await pool.query(
+      "SELECT * FROM posts WHERE bedid = ($1) ORDER BY posted DESC",
+      [bedid]
+    );
+    const pinnedPostsToTheFrontArr = [];
+    pullPosts.rows.forEach(post => {
+      if (post.pinned) pinnedPostsToTheFrontArr.unshift(post);
+      if (!post.pinned) pinnedPostsToTheFrontArr.push(post);
+    });
+    res.status(200).json(pinnedPostsToTheFrontArr);
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
 };
 
 exports.add_post = async function (req, res, next) {
-    const { title, content, pinned, id } = res.locals.validatedData;
+  const { bedid, title, content, pinned, postid } = res.locals.validatedData;
+  const posted = new Date();
 
-    let { bedid } = req.params;
-    bedid = Number(bedid);
-    const posted = new Date();
-  
-    try {
-      const addPost = await pool.query(
-        "INSERT INTO posts (bedid, authorid, authorname, authorusername, posted, edited, title, content, likes, dislikes, pinned, id, subscribers) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
-        [bedid, res.locals.user.id, `${res.locals.user.firstname} ${res.locals.user.lastname}`, res.locals.username, posted, null, title, content, [], [], pinned, id, []]
-      );
-      res.status(200).json("Successfully added a post.");
-    } catch(err) {
-      console.log(err.message);
-      res.status(404).json(err.message);
-    };
+  try {
+    // auth
+    if (!res.locals.userPermissions.includes("fullpermissions") && !res.locals.userPermissions.includes("postspermission")) throw new Error("You do not have permission to add posts.");
+
+    const addPost = await pool.query(
+      "INSERT INTO posts (bedid, authorid, authorname, authorusername, posted, edited, title, content, likes, dislikes, pinned, id, subscribers) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+      [bedid, res.locals.user.id, `${res.locals.user.firstname} ${res.locals.user.lastname}`, res.locals.username, posted, null, title, content, [], [], pinned, postid, []]
+    );
+    res.status(200).json("Successfully added a post.");
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
 };
 
 exports.update_post = async function(req, res, next) {
-    const { title, content, pinned, id } = res.locals.validatedData;
-    const edited = new Date();
-  
-    try {
-      /// AUTHENTICATION: that it is the post creator
+  const { title, content, pinned, postid } = res.locals.validatedData;
+  const edited = new Date();
+
+  try {
+    // AUTH
+    // throw error if lacking posts permissions
+    if (!res.locals.userPermissions.includes("postspermission")) {
+      throw new Error("You do not have permission to update posts.");
+    } else {
+    // throw error if posts permissions but user is not the post creator
       const getPostReq = await pool.query(
         "SELECT * FROM posts WHERE id = ($1)",
-        [id]
+        [postid]
       );
       if (getPostReq?.rows[0]?.authorusername !== res.locals.username) throw new Error("You do not have permission to edit this post as you are not the author.");
-
-      const updatePostReq = await pool.query(
-        "UPDATE posts SET title = ($1), content = ($2), edited = ($3), pinned = ($4) WHERE id = ($5)",
-        [title, content, edited, pinned, id]
-      );
-      res.status(200).json("Post successfully updated.");
-    } catch(err) {
-      console.log(err.message);
-      res.status(404).json(err.message);
     };
+
+    const updatePostReq = await pool.query(
+      "UPDATE posts SET title = ($1), content = ($2), edited = ($3), pinned = ($4) WHERE id = ($5)",
+      [title, content, edited, pinned, postid]
+    );
+    res.status(200).json("Post successfully updated.");
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
 };
 
 exports.update_subscribers = async function(req, res, next) {
@@ -100,6 +106,9 @@ exports.update_reactions = async function(req, res, next) {
   const { table, id, likes, dislikes } = res.locals.validatedData;
 
   try {
+    // auth
+    if (!res.locals.userPermissions.includes("fullpermissions") && !res.locals.userPermissions.includes("postinteractionspermission")) throw new Error("You do not have permission to interact with posts.");
+
     if (likes) {
       if (table === "posts") {
         const updateLikesReq = await pool.query(
@@ -134,23 +143,30 @@ exports.update_reactions = async function(req, res, next) {
 };
 
 exports.delete_post = async function(req, res, next) {
-    const { id } = res.locals.validatedData;
-  
-    try {
-      /// AUTHENTICATION: that it is the post creator
+  const { postid } = res.locals.validatedData;
+
+  try {
+    // AUTH
+    // throw error if lacking both posts and full permissions
+    if (!res.locals.userPermissions.includes("postspermission") && !res.locals.userPermissions.includes("fullpermissions")) {
+      throw new Error("You do not have permission to delete posts.");
+    };
+    // throw error if posts permissions (but no full permissions) and user is not the post creator
+    if (res.locals.userPermissions.includes("postspermission") && !res.locals.userPermissions.includes("fullpermissions")) {
       const getPostReq = await pool.query(
         "SELECT * FROM posts WHERE id = ($1)",
-        [id]
+        [postid]
       );
       if (getPostReq?.rows[0]?.authorusername !== res.locals.username) throw new Error("You do not have permission to delete this post as you are not the author.");
-
-      const deletePostReq = await pool.query(
-        "DELETE FROM posts WHERE id = ($1)",
-        [id]
-      );
-      res.status(200).json("Post successfully deleted.");
-    } catch(err) {
-      console.log(err.message);
-      res.status(404).json(err.message);
     };
+
+    const deletePostReq = await pool.query(
+      "DELETE FROM posts WHERE id = ($1)",
+      [postid]
+    );
+    res.status(200).json("Post successfully deleted.");
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
 };

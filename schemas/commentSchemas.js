@@ -1,4 +1,3 @@
-const { isValid } = require("date-fns");
 const { Pool } = require("pg");
 const pool = new Pool({
     user: process.env.PSQL_USER,
@@ -60,7 +59,7 @@ exports.commentTopPostIdSchema = {
 };
 
 exports.commentIdSchema = {
-    id: {
+    commentid: {
         optional: false,
         trim: true,
         checkLength: {

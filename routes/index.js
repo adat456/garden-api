@@ -6,12 +6,13 @@ const jwt = require("jsonwebtoken");
 const redis = require("redis");
 const { checkSchema, validationResult, matchedData } = require("express-validator");
 
+const { bedIdSchema } = require("../schemas/shared");
 const { findUsersSchema } = require("../schemas/userSchema");
-const { createEditBedSchema, rolesSchema, bedIdSchema, membersSchema, gridmapSchema, dateOfBedCreationSchema, copyBedSchema } = require ("../schemas/bedSchemas");
-const { pullPermissionsLogSchema, updatePermissionsLogSchema } = require ("../schemas/permissionsSchema");
+const { createEditBedSchema, rolesSchema, membersSchema, gridmapSchema, dateOfBedCreationSchema, copyBedSchema } = require ("../schemas/bedSchemas");
+const { updatePermissionsLogSchema } = require ("../schemas/permissionsSchema");
 const { vegSchema, returningWhatSchema, vegIdSchema, searchVegSchema } = require("../schemas/vegSchemas");
 const { notificationIdSchema, updateNotificationSchema, addNotificationSchema } = require("../schemas/notificationSchema");
-const { eventBedIdSchema, addEventSchema, deleteEventSchema } = require("../schemas/eventSchemas");
+const { addEventSchema, deleteEventSchema, deleteTagSchema } = require("../schemas/eventSchemas");
 const { postSchema, postIdSchema, updateSubscribersSchema, updateReactionsSchema } = require("../schemas/postSchemas");
 const { commentPostIdSchema, commentContentSchema, commentIdSchema, commentTopPostIdSchema } = require("../schemas/commentSchemas");
 
@@ -98,6 +99,51 @@ function accessValidatorResults(req, res, next) {
   };
 };
 
+async function determineUserPermissions(req, res, next) {
+  const { bedid } = res.locals.validatedData;
+  let userPermissions = [];
+  try {
+    const bedMembersReq = await pool.query(
+      "SELECT username, members FROM garden_beds WHERE id = ($1)",
+      [bedid]
+    );
+    const { username, members } = bedMembersReq.rows[0];
+
+    if (username === res.locals.user.username) {
+      userPermissions.push("fullpermissions");
+    } else {
+      const userMatch = members.find(member => member.id === res.locals.user.id);
+      if (!userMatch) throw new Error("You do not have permission to view or edit this board.");
+      const userRoleId = userMatch.role;
+
+      const permissionsLogReq = await pool.query(
+        "SELECT * FROM permissions WHERE bedid = ($1)",
+        [bedid]
+      );
+      const permissionsLog = permissionsLogReq.rows[0];
+      delete permissionsLog.bedid;
+      delete permissionsLog.creatorid;
+      const permissionsLogArr = Object.entries(permissionsLog);
+
+      permissionsLogArr.forEach(permissionsArr => {
+        if (permissionsArr[0].includes("memberids") && permissionsArr[1].includes(res.locals.user.id)) {
+          userPermissions.push(permissionsArr[0].slice(0, -9));
+        };
+        if (permissionsArr[0].includes("roleids") && permissionsArr[1].includes(userRoleId)) {
+          userPermissions.push(permissionsArr[0].slice(0, -7));
+        };
+      });
+    };
+
+    console.log(userPermissions);
+    res.locals.userPermissions = userPermissions;
+    next();
+  } catch(err) {
+    console.log(err.message);
+    res.status(400).json(err.message);
+  };
+};
+
 // attaching middleware to all requests
 router.use(authenticate);
 
@@ -112,20 +158,20 @@ router.get("/pull-beds-data", bedController.pull_beds_data);
 
 router.post("/create-bed", checkSchema(createEditBedSchema, ["body"]), checkSchema(dateOfBedCreationSchema, ["body"]), accessValidatorResults, bedController.create_bed);
 
-router.patch("/update-bed/:bedid", checkSchema(createEditBedSchema, ["body"]), checkSchema(bedIdSchema, ["params"]), accessValidatorResults, bedController.update_bed);
+router.patch("/update-bed/:bedid", checkSchema(createEditBedSchema, ["body"]), checkSchema(bedIdSchema, ["params"]), accessValidatorResults, determineUserPermissions, bedController.update_bed);
 
-router.patch("/update-gridmap/:bedid", checkSchema(gridmapSchema, ["body"]), checkSchema(bedIdSchema, ["params"]), accessValidatorResults, bedController.update_gridmap);
+router.patch("/update-gridmap/:bedid", checkSchema(gridmapSchema, ["body"]), checkSchema(bedIdSchema, ["params"]), accessValidatorResults, determineUserPermissions, bedController.update_gridmap);
 
-router.patch("/update-roles/:bedid", checkSchema(rolesSchema, ["body"]), checkSchema(bedIdSchema, ["params"]), accessValidatorResults, bedController.update_roles);
+router.patch("/update-roles/:bedid", checkSchema(rolesSchema, ["body"]), checkSchema(bedIdSchema, ["params"]), accessValidatorResults, determineUserPermissions, bedController.update_roles);
 
-router.patch("/update-members/:bedid", checkSchema(membersSchema, ["body"]), checkSchema(bedIdSchema, ["params"]), accessValidatorResults, bedController.update_members);
+router.patch("/update-members/:bedid", checkSchema(membersSchema, ["body"]), checkSchema(bedIdSchema, ["params"]), accessValidatorResults, determineUserPermissions, bedController.update_members);
 
-router.delete("/delete-bed/:bedid", checkSchema(bedIdSchema, ["params"]), accessValidatorResults, bedController.delete_bed);
+router.delete("/delete-bed/:bedid", checkSchema(bedIdSchema, ["params"]), accessValidatorResults, determineUserPermissions, bedController.delete_bed);
 
 /// PERMISSIONS ENDPOINTS ///
-router.get("/pull-permissions-log/:bedid", checkSchema(pullPermissionsLogSchema, ["params"]), accessValidatorResults, permissionsController.pull_permissions_log);
+router.get("/pull-permissions-log/:bedid", checkSchema(bedIdSchema, ["params"]), accessValidatorResults, determineUserPermissions, permissionsController.pull_permissions_log);
 
-router.patch("/update-permissions-log/:bedid", checkSchema(pullPermissionsLogSchema, ["params"]), checkSchema(updatePermissionsLogSchema, ["body"]), accessValidatorResults, permissionsController.update_permissions_log);
+router.patch("/update-permissions-log/:bedid", checkSchema(bedIdSchema, ["params"]), checkSchema(updatePermissionsLogSchema, ["body"]), accessValidatorResults, determineUserPermissions, permissionsController.update_permissions_log);
 
 /// PUBLIC BED ENDPOINTS ///
 router.get("/all-public-beds", accessValidatorResults, bedController.pull_all_public_beds);
@@ -148,7 +194,7 @@ router.get("/pull-seed-contributions", accessValidatorResults, vegController.pul
 /// NOTIFICATION ENDPOINTS ///
 router.get("/pull-notifications", notificationsController.pull_notifications);
 
-router.post("/add-notification", checkSchema(addNotificationSchema, ["body"]), accessValidatorResults, notificationsController.add_notification);
+router.post("/add-notification", checkSchema(addNotificationSchema, ["body"]), checkSchema(bedIdSchema, ["body"]), accessValidatorResults, notificationsController.add_notification);
 
 router.patch("/update-notification/:notifid", checkSchema(notificationIdSchema, ["params"]), checkSchema(updateNotificationSchema, ["body"]), accessValidatorResults, notificationsController.update_notification);
 
@@ -156,37 +202,37 @@ router.delete("/delete-notification/:notifid", checkSchema(notificationIdSchema,
 
 
 /// EVENT ENDPOINTS /// 
-router.get("/pull-events/:bedid", checkSchema(eventBedIdSchema, ["params"]), accessValidatorResults, eventsController.pull_events);
+router.get("/pull-events/:bedid", checkSchema(bedIdSchema, ["params"]), accessValidatorResults, eventsController.pull_events);
 
-router.post("/add-event/:bedid", checkSchema(eventBedIdSchema, ["params"]), checkSchema(addEventSchema, ["body"]), accessValidatorResults, eventsController.add_event);
+router.post("/add-event/:bedid", checkSchema(bedIdSchema, ["params"]), checkSchema(addEventSchema, ["body"]), accessValidatorResults, determineUserPermissions, eventsController.add_event);
 
-router.delete("/delete-event/:eventid/:repeatid", checkSchema(deleteEventSchema, ["params"]), accessValidatorResults, eventsController.delete_event);
+router.delete("/delete-event/:bedid/:eventid/:repeatid", checkSchema(bedIdSchema, ["params"]), checkSchema(deleteEventSchema, ["params"]), accessValidatorResults, determineUserPermissions, eventsController.delete_event);
 
-router.patch("/delete-tag/:bedid", accessValidatorResults, eventsController.delete_tag);
+router.patch("/delete-tag/:bedid", checkSchema(bedIdSchema, ["params"]), checkSchema(deleteTagSchema, ["body"]), accessValidatorResults, determineUserPermissions, eventsController.delete_tag);
 
 
 /// POST ENDPOINTS ///
-router.get("/pull-posts/:bedid", accessValidatorResults, postsController.pull_posts);
+router.get("/pull-posts/:bedid", checkSchema(bedIdSchema, ["params"]), accessValidatorResults, postsController.pull_posts);
 
-router.post("/add-post/:bedid", checkSchema(postSchema, ["body"]), checkSchema(postIdSchema, ["body"]), accessValidatorResults, postsController.add_post);
+router.post("/add-post/:bedid", checkSchema(bedIdSchema, ["params"]), checkSchema(postSchema, ["body"]), checkSchema(postIdSchema, ["body"]), accessValidatorResults, determineUserPermissions, postsController.add_post);
 
-router.patch("/update-post/:id", checkSchema(postSchema, ["body"]), checkSchema(postIdSchema, ["params"]), accessValidatorResults, postsController.update_post);
+router.patch("/update-post/:bedid/:postid", checkSchema(postSchema, ["body"]), checkSchema(bedIdSchema, ["params"]), checkSchema(postIdSchema, ["params"]), accessValidatorResults, determineUserPermissions, postsController.update_post);
 
 router.patch("/update-subscribers/:postid/:userid", checkSchema(updateSubscribersSchema, ["params"]), accessValidatorResults, postsController.update_subscribers);
 
-router.delete("/delete-post/:id", checkSchema(postIdSchema, ["params"]), accessValidatorResults, postsController.delete_post);
+router.delete("/delete-post/:bedid/:postid", checkSchema(bedIdSchema, ["params"]), checkSchema(postIdSchema, ["params"]), accessValidatorResults, determineUserPermissions, postsController.delete_post);
 
-router.patch("/update-reactions/:table/:id", checkSchema(updateReactionsSchema, ["params", "body"]), accessValidatorResults, postsController.update_reactions);
+router.patch("/update-reactions/:bedid/:table/:id", checkSchema(bedIdSchema, ["params"]), checkSchema(updateReactionsSchema, ["params", "body"]), accessValidatorResults, determineUserPermissions, postsController.update_reactions);
 
 
 /// COMMENT ENDPOINTS ///
 router.get("/pull-comments/:postid", checkSchema(commentPostIdSchema, ["params"]), accessValidatorResults, commentsController.pull_comments);
 
-router.post("/add-comment/:postid", checkSchema(commentPostIdSchema, ["params"]), checkSchema(commentContentSchema, ["body"]), checkSchema(commentIdSchema, ["body"]), checkSchema(commentTopPostIdSchema, ["body"]), accessValidatorResults, commentsController.add_comment);
+router.post("/add-comment/:bedid/:postid", checkSchema(bedIdSchema, ["params"]), checkSchema(commentPostIdSchema, ["params"]), checkSchema(commentContentSchema, ["body"]), checkSchema(commentIdSchema, ["body"]), checkSchema(commentTopPostIdSchema, ["body"]), accessValidatorResults, determineUserPermissions, commentsController.add_comment);
 
-router.patch("/update-comment/:id", checkSchema(commentIdSchema, ["params"]), checkSchema(commentContentSchema, ["body"]), accessValidatorResults, commentsController.update_comment);
+router.patch("/update-comment/:bedid/:commentid", checkSchema(bedIdSchema, ["params"]), checkSchema(commentIdSchema, ["params"]), checkSchema(commentContentSchema, ["body"]), accessValidatorResults, determineUserPermissions, commentsController.update_comment);
 
-router.delete("/delete-comment/:id", checkSchema(commentIdSchema, ["params"]), accessValidatorResults, commentsController.delete_comment);
+router.delete("/delete-comment/:bedid/:commentid", checkSchema(bedIdSchema, ["params"]), checkSchema(commentIdSchema, ["params"]), accessValidatorResults, determineUserPermissions, commentsController.delete_comment);
 
 
 /// MISC ENDPOINTS ///

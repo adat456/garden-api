@@ -43,80 +43,96 @@ exports.pull_comments = async function(req, res, next) {
 };
 
 exports.add_comment = async function(req, res, next) {
-    const { postid, content, id, toppostid } = res.locals.validatedData;
-    const posted = new Date();
+  const { postid, content, commentid, toppostid } = res.locals.validatedData;
+  const posted = new Date();
 
-    try {
-      const addCommentReq = await pool.query(
-        "INSERT INTO comments (id, toppostid, postid, authorid, authorname, authorusername, posted, edited, content, likes, dislikes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
-        [id, toppostid, postid, res.locals.user.id, `${res.locals.user.firstname} ${res.locals.user.lastname}`, res.locals.username, posted, null, content, [], []]
-      );
+  try {
+    // auth
+    if (!res.locals.userPermissions.includes("fullpermissions") && !res.locals.userPermissions.includes("postinteractionspermission")) throw new Error("You do not have permission to add comments.");
 
-      const pullPostInfo = await pool.query(
-        "SELECT subscribers, bedid, title FROM posts WHERE id = ($1)",
-        [toppostid]
-      );
-      const { subscribers, bedid, title } = pullPostInfo.rows[0];
-      if (subscribers.length > 0) {
-        const dispatched = new Date().toISOString().slice(0, 10);
-        subscribers.forEach(async subscriberid => {
-          if (subscriberid !== res.locals.user.id) {
-            const sendNotificationToSubscriber = await pool.query(
-              "INSERT INTO notifications (senderid, sendername, senderusername, recipientid, dispatched, type, read, bedid, posttitle, postid, commentid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
-              [res.locals.user.id, `${res.locals.user.firstname} ${res.locals.user.lastname}`, res.locals.username, subscriberid, dispatched, "postupdate", false, bedid, title, toppostid, id]
-            );
-          };
-        });
-      };
+    const addCommentReq = await pool.query(
+      "INSERT INTO comments (id, toppostid, postid, authorid, authorname, authorusername, posted, edited, content, likes, dislikes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+      [commentid, toppostid, postid, res.locals.user.id, `${res.locals.user.firstname} ${res.locals.user.lastname}`, res.locals.username, posted, null, content, [], []]
+    );
 
-      res.status(200).json("Added comment.");
-    } catch(err) {
-      console.log(err.message);
-      res.status(404).json(err.message);
+    const pullPostInfo = await pool.query(
+      "SELECT subscribers, bedid, title FROM posts WHERE id = ($1)",
+      [toppostid]
+    );
+    const { subscribers, bedid, title } = pullPostInfo.rows[0];
+    if (subscribers.length > 0) {
+      const dispatched = new Date().toISOString().slice(0, 10);
+      subscribers.forEach(async subscriberid => {
+        if (subscriberid !== res.locals.user.id) {
+          const sendNotificationToSubscriber = await pool.query(
+            "INSERT INTO notifications (senderid, sendername, senderusername, recipientid, dispatched, type, read, bedid, posttitle, postid, commentid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+            [res.locals.user.id, `${res.locals.user.firstname} ${res.locals.user.lastname}`, res.locals.username, subscriberid, dispatched, "postupdate", false, bedid, title, toppostid, commentid]
+          );
+        };
+      });
     };
+
+    res.status(200).json("Added comment.");
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
 };
 
 exports.update_comment = async function(req, res, next) {
-    const { content, id } = res.locals.validatedData;
-    const edited = new Date();
-  
-    try {
-      /// AUTHENTICATION: that it is the comment creator
+  const { content, commentid } = res.locals.validatedData;
+  const edited = new Date();
+
+  try {
+    // AUTH
+    // throw error if lacking both comments permissions
+    if (!res.locals.userPermissions.includes("postinteractionspermission")) {
+      throw new Error("You do not have permission to update comments.");
+    } else {
+    // throw error if comments permissions but user is not the comment creator
       const getCommentReq = await pool.query(
         "SELECT * FROM comments WHERE id = ($1)",
-        [id]
+        [commentid]
       );
-      if (getCommentReq?.rows[0]?.authorusernamee !== res.locals.username) throw new Error("You do not have permission to edit this comment as you are not the original author.");
-      
-      const updateCommentReq = await pool.query(
-        "UPDATE comments SET content = ($1), edited = ($2) WHERE id = ($3)",
-        [content, edited, id]
-      );
-      res.status(200).json("Comment successfully updated.");
-    } catch(err) {
-      console.log(err.message);
-      res.status(404).json(err.message);
+      if (getCommentReq?.rows[0]?.authorusername !== res.locals.username) throw new Error("You do not have permission to edit this comment as you are not the original author.");
     };
+
+    const updateCommentReq = await pool.query(
+      "UPDATE comments SET content = ($1), edited = ($2) WHERE id = ($3)",
+      [content, edited, commentid]
+    );
+    res.status(200).json("Comment successfully updated.");
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
 };
 
 exports.delete_comment = async function(req, res, next) {
-    const { id } = res.locals.validatedData;
-  
-    try {
-      /// AUTHENTICATION: that it is the comment creator
+  const { commentid } = res.locals.validatedData;
+
+  try {
+    // AUTH
+    // throw error if lacking both comments and full permissions
+    if (!res.locals.userPermissions.includes("postinteractionspermission") && !res.locals.userPermissions.includes("fullpermissions")) {
+      throw new Error("You do not have permission to update comments.");
+    };
+    // throw error if comments permissions (but no full permissions) and user is not the comment creator
+    if (res.locals.userPermissions.includes("postinteractionspermission") && !res.locals.userPermissions.includes("fullpermissions")) {
       const getCommentReq = await pool.query(
         "SELECT * FROM comments WHERE id = ($1)",
-        [id]
+        [commentid]
       );
-      if (getCommentReq?.rows[0]?.authorusernamee !== res.locals.username) throw new Error("You do not have permission to edit this comment as you are not the original author.");
-
-      const deleteCommentReq = await pool.query(
-        "DELETE FROM comments WHERE id = ($1)",
-        [id]
-      );
-      res.status(200).json("Comment successfully deleted.");
-    } catch(err) {
-      console.log(err.message);
-      res.status(404).json(err.message);
+      if (getCommentReq?.rows[0]?.authorusername !== res.locals.username) throw new Error("You do not have permission to delete this comment as you are not the original author.");
     };
+
+    const deleteCommentReq = await pool.query(
+      "DELETE FROM comments WHERE id = ($1)",
+      [commentid]
+    );
+    res.status(200).json("Comment successfully deleted.");
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
 };

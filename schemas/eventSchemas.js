@@ -106,16 +106,6 @@ function ensureEveryTagIsUnique(value) {
     return uniqueEventTagsArr;
 };
 
-exports.eventBedIdSchema = {
-    bedid: {
-        optional: false,
-        isInt: {
-            errorMessage: "Bed ID must be a number/integer."
-        },
-        toInt: true,
-    },
-};
-
 exports.addEventSchema = {
     id: {
         optional: false,
@@ -303,5 +293,13 @@ exports.deleteEventSchema = {
             custom: isNanoIdLengthOrUndefined,
             errorMessage: "Repeat ID should be 21 characters in length and should be randomly generated."
         },
-    }
+    },
+};
+
+exports.deleteTagSchema = {
+    tag: {
+        optional: false,
+        trim: true,
+        toLowerCase: true,
+    },
 };

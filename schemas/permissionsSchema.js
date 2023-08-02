@@ -38,14 +38,12 @@ function isAcceptableIdValue(value, {req}) {
     return returnValue;
 };
 
-exports.pullPermissionsLogSchema = {
-    bedid: {
-        optional: false,
-        isInt: {
-            errorMessage: "Bed ID must be represented by an integer/numeric value.",
-        },
-        toInt: true,
-    },
+function convertIdToInt(value, {req}) {
+    if (req.body.permissions.group === "member") {
+        return Number(value);
+    } else if (req.body.permissions.group === "role") {
+        return value;
+    };
 };
 
 exports.updatePermissionsLogSchema = {
@@ -69,8 +67,8 @@ exports.updatePermissionsLogSchema = {
             custom: isAcceptableIdValue,
             errorMessage: "ID must be either a string (if a role ID) or an integer (if a user ID).",
         },
-        toInt: {
-            if: (value, {req}) => req.body.group === "member"
+        conditionallyConvertToInt: {
+            customSanitizer: convertIdToInt,
         },
     },
 };

@@ -9,6 +9,7 @@ const pool = new Pool({
 
 const { createPermissionsLog } = require("./permissionsController");
 
+// pulls beds data AND determines user's permissions for each bed
 exports.pull_beds_data = async function(req, res, next) {
     try {
       // returns all boards where user is the creator...
@@ -19,9 +20,6 @@ exports.pull_beds_data = async function(req, res, next) {
       // ...where the user is a member...
       const getMemberBoardsReq = await pool.query(
         "SELECT * FROM garden_beds WHERE members::JSONB @> ($1)",
-        // "SELECT * FROM garden_beds WHERE members::JSONB @> '[{ ($1) : ($2) }]'",
-        // [JSON.stringify("username"), JSON.stringify(res.locals.username)]
-        // above code didn't work, nor when "username" was placed directly as the first argument instead of passing it in as a parameter... would get error message "invalid input syntax for type json"
         [JSON.stringify([{ "username": res.locals.username, "status": "accepted" }])]
       );
       // and LIMITED info where the user is still pending
@@ -29,7 +27,10 @@ exports.pull_beds_data = async function(req, res, next) {
         "SELECT id, name, username, members, length, width, gridmap FROM garden_beds WHERE members::JSONB @> ($1)",
         [JSON.stringify([{ "username": res.locals.username, "status": "pending" }])]
       );
-      res.status(200).json([...getUserBoardsReq.rows, ...getMemberBoardsReq.rows, ...getPendingBoardsReq.rows]);
+      // consolidate all results into a single array
+      const allBeds = [...getUserBoardsReq.rows, ...getMemberBoardsReq.rows, ...getPendingBoardsReq.rows];
+      // send to user/RTK 
+      res.status(200).json(allBeds);
     } catch(err) {
       console.log(err.message);
       res.status(400).json(err.message);
@@ -59,26 +60,22 @@ exports.create_bed = async function(req, res, next) {
 };
 
 exports.update_bed = async function(req, res, next) {
-    const { name, hardiness, sunlight, soil, whole, length, width, gridmap, public, bedid } = res.locals.validatedData;
-    const gridmapJSON = JSON.stringify(gridmap);
-      
-    try {
-      /// AUTHENTICATION: that it is the bed creator
-      const getBedCreatorsUsername = await pool.query(
-        "SELECT username FROM garden_beds WHERE id = ($1)",
-        [bedid]
-      );
-      if (getBedCreatorsUsername?.rows[0]?.username !== res.locals.username) throw new Error("You are not the creator of this garden bed and do not have permission to make updates.");
+  const { name, hardiness, sunlight, soil, whole, length, width, gridmap, public, bedid } = res.locals.validatedData;
+  const gridmapJSON = JSON.stringify(gridmap);
 
-      const updateBedReq = await pool.query(
-        "UPDATE garden_beds SET hardiness = ($1), sunlight = ($2), soil = ($3), whole = ($4), length = ($5), width = ($6), gridmap = ($7), name = ($8), public = ($9) WHERE id = ($10)",
-        [hardiness, sunlight, soil, whole, length, width, gridmapJSON, name, public, bedid]
-      );
-      res.status(200).json("Successfully updated bed.");
-    } catch(err) {
-      console.log(err.message);
-      res.status(404).json(err.message);
-    };
+  try {
+    /// auth
+    if (!res.locals.userPermissions.includes("fullpermissions")) throw new Error("You do not have permission to update this bed.");
+
+    const updateBedReq = await pool.query(
+      "UPDATE garden_beds SET hardiness = ($1), sunlight = ($2), soil = ($3), whole = ($4), length = ($5), width = ($6), gridmap = ($7), name = ($8), public = ($9) WHERE id = ($10)",
+      [hardiness, sunlight, soil, whole, length, width, gridmapJSON, name, public, bedid]
+    );
+    res.status(200).json("Successfully updated bed.");
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
 };
 
 exports.update_gridmap = async function(req, res, next) {
@@ -86,12 +83,8 @@ exports.update_gridmap = async function(req, res, next) {
   const gridmapJSON = JSON.stringify(gridmap);
 
   try {
-    /// AUTHENTICATION: that it is the bed creator
-    const getBedCreatorsUsername = await pool.query(
-      "SELECT username FROM garden_beds WHERE id = ($1)",
-      [bedid]
-    );
-    if (getBedCreatorsUsername?.rows[0]?.username !== res.locals.username) throw new Error("You are not the creator of this garden bed and do not have permission to make updates.");
+    // auth
+    if (!res.locals.userPermissions.includes("fullpermissions")) throw new Error("You do not have permission to update this bed.");
 
     const req = await pool.query(
       "UPDATE garden_beds SET gridmap = ($1) WHERE id = ($2)",
@@ -109,6 +102,9 @@ exports.update_roles = async function(req, res, next) {
   const rolesJSON = JSON.stringify(roles);
 
   try {
+    // auth
+    if (!res.locals.userPermissions.includes("fullpermissions") && !res.locals.userPermissions.includes("rolespermission")) throw new Error("You do not have permission to update community roles.");
+
     const previousRolesReq = await pool.query(
       "SELECT roles FROM garden_beds WHERE id = ($1)",
       [bedid]
@@ -156,6 +152,9 @@ exports.update_members = async function(req, res, next) {
   const membersJSON = JSON.stringify(members);
 
   try {
+    // auth
+    if (!res.locals.userPermissions.includes("fullpermissions") && !res.locals.userPermissions.includes("memberspermission")) throw new Error("You do not have permission to update community members and their roles.");
+
     const previousMembersReq = await pool.query(
       "SELECT members FROM garden_beds WHERE id = ($1)",
       [bedid]
@@ -178,7 +177,7 @@ exports.update_members = async function(req, res, next) {
       let updatedMemberPermissionsArrArr = []; // an array of arrays, which will be spread
       // filtering out the removedMemberID
       allMemberPermissionsArrArr.forEach(permissionsArr => {
-        updatedMemberPermissionsArrArr.push(permissionsArr.filter(id !== removedMemberID));
+        updatedMemberPermissionsArrArr.push(permissionsArr.filter(id => id !== removedMemberID));
       });
       const updateAllMemberPermissions = await pool.query(
         "UPDATE permissions SET fullpermissionsmemberids = ($1), memberspermissionmemberids = ($2), rolespermissionmemberids = ($3), eventspermissionmemberids = ($4), tagspermissionmemberids = ($5), postspermissionmemberids = ($6), postinteractionspermissionmemberids = ($7) WHERE bedid = ($8)",
@@ -199,25 +198,21 @@ exports.update_members = async function(req, res, next) {
 };
 
 exports.delete_bed = async function(req, res, next) {
-    const { bedid } = res.locals.validatedData;
-  
-    try {
-      /// AUTHENTICATION: that it is the bed creator
-      const getBedCreatorsUsername = await pool.query(
-        "SELECT username FROM garden_beds WHERE id = ($1)",
-        [bedid]
-      );
-      if (getBedCreatorsUsername?.rows[0]?.username !== res.locals.username) throw new Error("You are not the creator of this garden bed and do not have permission to make updates.");
+  const { bedid } = res.locals.validatedData;
 
-      const deleteReq = await pool.query(
-        "DELETE FROM garden_beds WHERE id = ($1)",
-        [bedid]
-      );
-      res.status(200).json("Bed successfully deleted.");
-    } catch(err) {
-      console.log(err.message);
-      res.status(404).json(err.message);
-    };
+  try {
+    // auth
+    if (!res.locals.userPermissions.includes("fullpermissions")) throw new Error("You do not have permission to delete this bed.");
+
+    const deleteReq = await pool.query(
+      "DELETE FROM garden_beds WHERE id = ($1)",
+      [bedid]
+    );
+    res.status(200).json("Bed successfully deleted.");
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
 };
 
 exports.pull_all_public_beds = async function(req, res, next) {
