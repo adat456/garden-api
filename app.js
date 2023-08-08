@@ -17,10 +17,6 @@ const io = socketIo(server, {
     origin: "http://localhost:5173",
   }
 });
-io.on("connection", (socket) => {
-  // console.log(`${socket.id} connected`);
-});
-// app.set("io", io);
 app.use(function(req, res, next) {
   req.io = io;
   next();

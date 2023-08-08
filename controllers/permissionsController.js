@@ -96,6 +96,22 @@ exports.update_permissions_log = async function(req, res, next) {
             updateIdsSQLQuery,
             [currentListOfIds]
         );
+
+        // sending a notification to any members or members with roles who's permissions changed
+        if (group === "member") {
+            req.io.emit(`notifications-${id}`, "permissionsupdate", bedid);
+        } else if (group === "role") {
+            const bedMembersReq = await pool.query(
+                "SELECT members FROM garden_beds WHERE id = ($1)",
+                [bedid]
+            );
+            const membersWithThisRole = bedMembersReq.rows[0].members.filter(member => member.role === id);
+            console.log(membersWithThisRole);
+            membersWithThisRole.forEach(member => {
+                req.io.emit(`notifications-${member.id}`, "permissionsupdate", bedid);
+            });
+        };
+        
         res.status(200).json("Updated.");
     } catch(err) {
         console.log(err.message);
@@ -116,51 +132,3 @@ exports.createPermissionsLog = async function(bedid, creatorid) {
         res.status(404).json(err.message);
     };
 };
-
-// exports.determineUserPermissions = async function(beds, username, userid, app) {
-//     let userPermissions = {};
-//     // initializing each bedid key-value pair with an empty array 
-//     beds.forEach(bed => {
-//         userPermissions[bed.id] = []
-//     });
-//     // will end up looking like {22: ["fullpermissions"], 122: ["rolespermission"]}
-//     try {
-//         beds.forEach(async bed => {
-//             // if user is the creator, just set "fullpermissions" as the value to the bed id's key
-//             if (bed.username === username) {
-//                 userPermissions[bed.id] = [...userPermissions[bed.id], "fullpermissions"];
-//             } else {
-//                 // if not the creator, try to find a matching member and then the member's role ID, if any
-//                 const userMatch = bed.members.find(member => member.id === userid);
-//                 if (!userMatch) throw new Error("You do not have permission to view or edit this board.");
-//                 const userRoleId = userMatch.role;
-
-//                 const permissionsLogReq = await pool.query(
-//                     "SELECT * FROM permissions WHERE bedid = ($1)",
-//                     [bed.id]
-//                 );
-//                 const permissionsLog = permissionsLogReq.rows[0];
-//                 delete permissionsLog.bedid;
-//                 delete permissionsLog.creatorid;
-//                 const permissionsLogArr = Object.entries(permissionsLog);
-
-//                 // iterating through the array of arrays
-//                 permissionsLogArr.forEach(permissionsArr => {
-//                     // if permission type is for member IDs, see if the array includes the user's id
-//                     if (permissionsArr[0].includes("memberids") && permissionsArr[1].includes(userid)) {
-//                         userPermissions[bed.id] = [...userPermissions[bed.id], permissionsArr[0].slice(0, -9)];
-//                     };
-//                     // if permission type is for role IDs, see if the array includes the user's role id
-//                     if (permissionsArr[0].includes("roleids") && permissionsArr[1].includes(userRoleId)) {
-//                         userPermissions[bed.id] = [...userPermissions[bed.id], permissionsArr[0].slice(0, -7)];
-//                     };
-//                 });
-//             };
-//         });
-
-//         app.locals.userPermissions = userPermissions;
-//     } catch(err) {
-//         console.log(err.message);
-//     };
-// };
-

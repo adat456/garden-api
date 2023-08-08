@@ -1,7 +1,7 @@
 var express = require('express');
 var router = express.Router();
 const { checkSchema, validationResult, matchedData  } = require("express-validator");
-const { createUserSchema, logInSchema, logOutSchema } = require("../schemas/userSchema");
+const { createUserSchema, logInSchema, logOutSchema } = require("../schemas/userSchemas");
 const userController = require("../controllers/userController");
 
 // middleware

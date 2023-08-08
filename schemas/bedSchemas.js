@@ -96,6 +96,13 @@ exports.createEditBedSchema = {
         },
         toBoolean: true,
     },
+    address: {
+        optional: true,
+        trim: true,
+    },
+    'coordinates.*': {
+        optional: true
+    },
     hardiness: {
         optional: true,
         isInt: {
@@ -270,6 +277,21 @@ exports.gridmapSchema = {
         optional: true,
         isHexColor: {
             errorMessage: "Grid color must be a hexadecimal color value."
+        },
+    },
+};
+
+exports.seedbasketSchema = {
+    seedbasket: {
+        optional: false,
+        isArray: {
+            errorMessage: "Seed basket must be an array of seed/plant objects.",
+        },
+    },
+    '**.gridcolor': {
+        optional: false,
+        isHexColor: {
+            errorMessage: "Grid color must be a hexadecimal color string."
         },
     },
 };

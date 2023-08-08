@@ -7,3 +7,8 @@ exports.bedIdSchema = {
         toInt: true,
     },
 };
+
+exports.isNanoIdLength = function(value) {
+    const returnValue = value.length == 21 ? true : false;
+    return returnValue;
+};

@@ -38,14 +38,15 @@ exports.pull_beds_data = async function(req, res, next) {
 };
 
 exports.create_bed = async function(req, res, next) {
-    const { name, hardiness, sunlight, soil, whole, length, width, gridmap, public, created } = res.locals.validatedData;
+    const { name, hardiness, sunlight, soil, whole, length, width, gridmap, public, address, coordinates, created } = res.locals.validatedData;
     const gridmapJSON = JSON.stringify(gridmap);
+    const coordinatesJSON = JSON.stringify(coordinates);
       
     try {
       // create the new bed and retrive its id
       const addNewBedReq = await pool.query(
-        "INSERT INTO garden_beds (hardiness, sunlight, soil, whole, length, width, gridmap, name, public, created, username, numhearts, numcopies, seedbasket, members, roles, eventtags) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id",
-        [hardiness, sunlight, soil, whole, length, width, gridmapJSON, name, public, created, res.locals.username, [], [], JSON.stringify([]), JSON.stringify([]), JSON.stringify([]), []]
+        "INSERT INTO garden_beds (hardiness, sunlight, soil, whole, length, width, gridmap, name, public, address, coordinates, created, username, numhearts, numcopies, seedbasket, members, roles, eventtags) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING id",
+        [hardiness, sunlight, soil, whole, length, width, gridmapJSON, name, public, address, coordinatesJSON, created, res.locals.username, [], [], JSON.stringify([]), JSON.stringify([]), JSON.stringify([]), []]
       );
       const newBed = addNewBedReq.rows[0];
 
@@ -60,16 +61,17 @@ exports.create_bed = async function(req, res, next) {
 };
 
 exports.update_bed = async function(req, res, next) {
-  const { name, hardiness, sunlight, soil, whole, length, width, gridmap, public, bedid } = res.locals.validatedData;
+  const { name, hardiness, sunlight, soil, whole, length, width, gridmap, public, address, coordinates, bedid } = res.locals.validatedData;
   const gridmapJSON = JSON.stringify(gridmap);
+  const coordinatesJSON = JSON.stringify(coordinates);
 
   try {
     /// auth
     if (!res.locals.userPermissions.includes("fullpermissions")) throw new Error("You do not have permission to update this bed.");
 
     const updateBedReq = await pool.query(
-      "UPDATE garden_beds SET hardiness = ($1), sunlight = ($2), soil = ($3), whole = ($4), length = ($5), width = ($6), gridmap = ($7), name = ($8), public = ($9) WHERE id = ($10)",
-      [hardiness, sunlight, soil, whole, length, width, gridmapJSON, name, public, bedid]
+      "UPDATE garden_beds SET hardiness = ($1), sunlight = ($2), soil = ($3), whole = ($4), length = ($5), width = ($6), gridmap = ($7), name = ($8), public = ($9), address = ($10), coordinates = ($11) WHERE id = ($12)",
+      [hardiness, sunlight, soil, whole, length, width, gridmapJSON, name, public, address, coordinatesJSON, bedid]
     );
     res.status(200).json("Successfully updated bed.");
   } catch(err) {
@@ -91,6 +93,25 @@ exports.update_gridmap = async function(req, res, next) {
       [gridmapJSON, bedid]
     );
     res.status(200).json("Gridmap successfully updated.");
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+};
+
+exports.update_seedbasket = async function(req, res, next) {
+  let { bedid, seedbasket } = res.locals.validatedData;
+  seedbasket = JSON.stringify(seedbasket);
+
+  try {
+    /// auth
+    if (!res.locals.userPermissions.includes("fullpermissions")) throw new Error("You do not have permission to update this bed's seed basket.");
+
+    const req = await pool.query(
+      "UPDATE garden_beds SET seedbasket = ($1) WHERE id = ($2)",
+      [seedbasket, bedid]
+    );
+    res.status(200).json("Seedbasket successfully updated.");
   } catch(err) {
     console.log(err.message);
     res.status(404).json(err.message);
@@ -238,6 +259,25 @@ exports.pull_all_public_beds = async function(req, res, next) {
       [true, res.locals.username]
     );
     res.status(200).json(recentPublicBedsReq.rows);
+  } catch(err) {
+    console.log(err.message);
+    res.status(400).json(err.message);
+  };
+};
+
+exports.pull_one_public_bed = async function(req, res, next) {
+  const { bedid } = res.locals.validatedData;
+
+  try {
+    const getPublicBedReq = await pool.query(
+      "SELECT * FROM garden_beds WHERE public = $1 AND id = $2",
+      [true, bedid]
+    );
+    if (getPublicBedReq.rowCount === 1) {
+      res.status(200).json(getPublicBedReq.rows[0]);
+    } else if (getPublicBedReq.rowCount === 0) {
+      throw new Error("Unable to find a matching public garden bed.")
+    };
   } catch(err) {
     console.log(err.message);
     res.status(400).json(err.message);

@@ -7,10 +7,11 @@ const redis = require("redis");
 const { checkSchema, validationResult, matchedData } = require("express-validator");
 
 const { bedIdSchema } = require("../schemas/shared");
-const { findUsersSchema } = require("../schemas/userSchema");
-const { createEditBedSchema, rolesSchema, membersSchema, gridmapSchema, dateOfBedCreationSchema, copyBedSchema } = require ("../schemas/bedSchemas");
+const { findUsersSchema } = require("../schemas/userSchemas");
+const { createEditBedSchema, rolesSchema, membersSchema, gridmapSchema, seedbasketSchema, dateOfBedCreationSchema, copyBedSchema } = require ("../schemas/bedSchemas");
 const { updatePermissionsLogSchema } = require ("../schemas/permissionsSchema");
 const { vegSchema, returningWhatSchema, vegIdSchema, searchVegSchema } = require("../schemas/vegSchemas");
+const { addTaskSchema } = require("../schemas/taskSchemas");
 const { notificationIdSchema, updateNotificationSchema, addNotificationSchema } = require("../schemas/notificationSchema");
 const { addEventSchema, deleteEventSchema, deleteTagSchema } = require("../schemas/eventSchemas");
 const { postSchema, postIdSchema, updateSubscribersSchema, updateReactionsSchema } = require("../schemas/postSchemas");
@@ -20,6 +21,7 @@ const userController = require("../controllers/userController");
 const bedController = require("../controllers/bedController");
 const permissionsController = require("../controllers/permissionsController");
 const vegController = require("../controllers/vegController");
+const tasksController = require("../controllers/tasksController");
 const notificationsController = require("../controllers/notificationsController");
 const eventsController = require("../controllers/eventsController");
 const postsController = require("../controllers/postsController");
@@ -109,7 +111,7 @@ async function determineUserPermissions(req, res, next) {
     );
     const { username, members } = bedMembersReq.rows[0];
 
-    if (username === res.locals.user.username) {
+    if (username === res.locals.username) {
       userPermissions.push("fullpermissions");
     } else {
       const userMatch = members.find(member => member.id === res.locals.user.id);
@@ -162,6 +164,8 @@ router.patch("/update-bed/:bedid", checkSchema(createEditBedSchema, ["body"]), c
 
 router.patch("/update-gridmap/:bedid", checkSchema(gridmapSchema, ["body"]), checkSchema(bedIdSchema, ["params"]), accessValidatorResults, determineUserPermissions, bedController.update_gridmap);
 
+router.patch("/update-seed-basket/:bedid", checkSchema(bedIdSchema, ["params"]), checkSchema(seedbasketSchema, ["body"]), accessValidatorResults, determineUserPermissions, bedController.update_seedbasket);
+
 router.patch("/update-roles/:bedid", checkSchema(rolesSchema, ["body"]), checkSchema(bedIdSchema, ["params"]), accessValidatorResults, determineUserPermissions, bedController.update_roles);
 
 router.patch("/update-members/:bedid", checkSchema(membersSchema, ["body"]), checkSchema(bedIdSchema, ["params"]), accessValidatorResults, determineUserPermissions, bedController.update_members);
@@ -176,7 +180,9 @@ router.get("/pull-permissions-log/:bedid", checkSchema(bedIdSchema, ["params"]),
 router.patch("/update-permissions-log/:bedid", checkSchema(bedIdSchema, ["params"]), checkSchema(updatePermissionsLogSchema, ["body"]), accessValidatorResults, determineUserPermissions, permissionsController.update_permissions_log);
 
 /// PUBLIC BED ENDPOINTS ///
-router.get("/all-public-beds", accessValidatorResults, bedController.pull_all_public_beds);
+router.get("/all-public-beds", bedController.pull_all_public_beds);
+
+router.get("/one-public-bed/:bedid", checkSchema(bedIdSchema, ["params"]), accessValidatorResults, bedController.pull_one_public_bed);
 
 router.patch("/toggle-bed-favorites/:bedid", checkSchema(bedIdSchema, ["params"]), accessValidatorResults, bedController.toggle_bed_favorites);
 
@@ -201,6 +207,12 @@ router.post("/add-notification", checkSchema(addNotificationSchema, ["body"]), c
 router.patch("/update-notification/:notifid", checkSchema(notificationIdSchema, ["params"]), checkSchema(updateNotificationSchema, ["body"]), accessValidatorResults, notificationsController.update_notification);
 
 router.delete("/delete-notification/:notifid", checkSchema(notificationIdSchema, ["params"]), accessValidatorResults, notificationsController.delete_notification);
+
+
+/// TASK ENDPOINTS ///
+router.get("/pull-tasks/:bedid", checkSchema(bedIdSchema, ["params"]), accessValidatorResults, determineUserPermissions, tasksController.pull_tasks);
+
+router.post("/add-task/:bedid", checkSchema(bedIdSchema, ["params"]), checkSchema(addTaskSchema, ["body"]), accessValidatorResults, determineUserPermissions, tasksController.add_task);
 
 
 /// EVENT ENDPOINTS /// 
@@ -240,24 +252,6 @@ router.delete("/delete-comment/:bedid/:commentid", checkSchema(bedIdSchema, ["pa
 
 
 /// MISC ENDPOINTS ///
-router.patch("/update-seed-basket/:bedid", async function(req, res, next) {
-  let { bedid } = req.params;
-  bedid = Number(bedid);
-  let seedbasket = req.body;
-  seedbasket = JSON.stringify(seedbasket);
-
-  try {
-    const req = await pool.query(
-      "UPDATE garden_beds SET seedbasket = ($1) WHERE id = ($2)",
-      [seedbasket, bedid]
-    );
-    res.status(200).json("Seedbasket successfully updated.");
-  } catch(err) {
-    console.log(err.message);
-    res.status(400).json(err.message);
-  };
-});
-
 router.get("/pull-weather/:latitude/:longitude", async function(req, res, next) {
   const { latitude, longitude } = req.params;
   
@@ -274,6 +268,23 @@ router.get("/pull-weather/:latitude/:longitude", async function(req, res, next) 
         humidity: weatherData.main.humidity,
         wind_speed: weatherData.wind.speed,
       });
+    };
+  } catch(err) {
+    console.log(err.message);
+    res.status(404).json(err.message);
+  };
+});
+
+router.get("/pull-nearby-addresses/:request", async function(req, res, next) {
+  const { request } = req.params;
+
+  try {
+    const addressesRequest = await fetch(`https://api.geoapify.com/v1/geocode/autocomplete?text=${request}&format=json&apiKey=${process.env.GEOAPIFY_AUTOCOMPLETE_KEY}
+    `);
+    const addressesData = await addressesRequest.json();
+    if (addressesRequest.ok) {
+      console.log(addressesData.results);
+      res.status(200).json(addressesData.results);
     };
   } catch(err) {
     console.log(err.message);

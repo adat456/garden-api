@@ -32,7 +32,7 @@ exports.add_notification = async function(req, res, next) {
       // notifies recipient via socket of a new notification, which will then prompt manual refetching of notifications and other data
       if (type === "rsvpinvite" || type === "rsvpconfirmation") {
         req.io.emit(`notifications-${recipientid}`, type, bedid);
-      } else {
+      } else if (type === "memberinvite" || type === "memberconfirmation" || type === "memberrejection") {
         req.io.emit(`notifications-${recipientid}`, type);
       };
   
@@ -94,7 +94,6 @@ exports.add_notification = async function(req, res, next) {
           "SELECT rsvpsreceived FROM events WHERE id = ($1)",
           [eventid]
         );
-        console.log(eventRSVPsReceived);
         const updatedRsvps = [...eventRSVPsReceived.rows[0].rsvpsreceived, senderid];
         const updateRSVPs = await pool.query(
           "UPDATE events SET rsvpsreceived = ($1) WHERE id = ($2)",
