@@ -27,33 +27,35 @@ exports.addTaskSchema = {
     description: {
         optional: true,
         isLength: {
-            options: { min: 1, max: 250 },
-            errorMessage: "Must be between 1 and 250 characters long."
+            options: { max: 250 },
+            errorMessage: "Must be no longer than 250 characters."
         },
     },
     duedate: {
         optional: true,
         isISO8601: {
-            if: (value) => value !== "",
+            if: (value, { req }) => !req.body.startdate && !req.body.enddate,
             errorMessage: "Must be formatted YYYY-MM-DD.",
         },
     },
     startdate: {
         optional: false,
         isISO8601: {
+            if: (value, { req }) => !req.body.duedate,
             errorMessage: "Must be formatted YYYY-MM-DD.",
         },
     },
     enddate: {
         optional: true,
         isISO8601: {
-            if: (value) => value !== "",
+            if: (value, { req }) => req.body.startdate,
             errorMessage: "Must be formatted YYYY-MM-DD.",
         },
     },
     repeatsevery: {
         optional: true,
         isArray: {
+            if: (value, { req }) => !req.body.duedate,
             options: { min: 2 },
             errorMessage: "Repeating frequency must be described by an array at least two elements long."
         },
@@ -61,6 +63,7 @@ exports.addTaskSchema = {
     'repeatsevery[0]': {
         optional: false,
         checkIsValidRepeatingInterval: {
+            if: (value, { req }) => !req.body.duedate,
             custom: isValidRepeatingInterval,
             errorMessage: "Must be one of several pre-defined values (e.g., 'every', 'every other').",
         },
