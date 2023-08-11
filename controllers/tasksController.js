@@ -55,11 +55,12 @@ exports.add_task = async function(req, res, next) {
     const { bedid, id, name, description, duedate, startdate, enddate, repeatsevery, assignedtomembers, assignedtoroles, private } = res.locals.validatedData;
     const assignedby = res.locals.user.id;
     const datecreated = new Date().toISOString().slice(0, 10);
-    const completeddates = [];
+    const completeddates = JSON.stringify([]);
+    const completed = false;
 
     try {
         // auth
-        if (!res.locals.userPermissions.includes("fullpermissions") && !res.locals.userPermissions.includes("taskspermissions")) throw new Error("You do not have permission to add tasks.");
+        if (!res.locals.userPermissions.includes("fullpermissions") && !res.locals.userPermissions.includes("taskspermission")) throw new Error("You do not have permission to add tasks.");
 
         // numbers corresponding to each weekday for date-fns fx
         const weekdayNums = {
@@ -73,6 +74,7 @@ exports.add_task = async function(req, res, next) {
         };
         let repeatingduedates = [];
 
+        // note that repeat dates are generated from start date to end date INCLUSIVE
         if (repeatsevery.length >= 2) {
             // use each repeating weekday to generate a smaller array of due dates, to be added to the repeatingduedates array
             const repeatingWeekdays = repeatsevery.slice(1);
@@ -195,12 +197,67 @@ exports.add_task = async function(req, res, next) {
         };
 
         const addTaskReq = await pool.query(
-            "INSERT INTO tasks (bedid, id, name, description, duedate, startdate, enddate, repeatsevery, assignedby, datecreated, repeatingduedates, completeddates, assignedtomembers, assignedtoroles, private) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)",
-            [bedid, id, name, description, duedate, startdate, enddate, repeatsevery, assignedby, datecreated, repeatingduedates, completeddates, assignedtomembers, assignedtoroles, private]
+            "INSERT INTO tasks (bedid, id, name, description, duedate, startdate, enddate, repeatsevery, assignedby, datecreated, repeatingduedates, completeddates, completed, assignedtomembers, assignedtoroles, private) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)",
+            [bedid, id, name, description, duedate, startdate, enddate, repeatsevery, assignedby, datecreated, repeatingduedates, completeddates, completed, assignedtomembers, assignedtoroles, private]
         );
         res.status(200).json("Task added.");
     } catch(err) {
         console.log(err.message);
         res.status(400).json(err.message);
     };
+};
+
+exports.update_task_completion = async function(req, res, next) {
+    const { taskid, duedate } = res.locals.validatedData;
+    // duedate is optional, only for updating repeating tasks
+
+    try {
+        const pullTask = await pool.query(
+            "SELECT * FROM tasks WHERE id = ($1)",
+            [taskid]
+        );
+        const task = pullTask.rows[0];
+
+        // auth
+        if (!res.locals.userPermissions.includes("fullpermissions") && !res.locals.userPermissions.includes("tasks") && !task.assignedMembers.includes(res.locals.user.id) && !task.assignedRoles.includes(res.locals.userRoleID)) throw new Error("You do not have permission to modify the completion status of this task.");
+
+        // updates depending on non-repeating vs repeating
+        if (task.duedate) {
+            const toggleTaskCompletion = await pool.query(
+                "UPDATE tasks SET completed = NOT completed WHERE id = ($1)",
+                [taskid]
+            );
+        } else if (task.repeatsevery.length >= 2) {
+            if (!task.repeatingduedates.includes(duedate)) throw new Error("The provided due date is not one of the dates when this task needs to be completed.");
+            // different actions depending on whether a matching due date can be found in one of the completed date objects
+            const matchingDueDate = task.completeddates.find(completionRecord => completionRecord.duedate === duedate);
+            if (matchingDueDate) {
+                const filteredCompletionRecords = task.completeddates.filter(completionRecord => completionRecord.duedate !== duedate);
+                const updateCompletionRecords = await pool.query(
+                    "UPDATE tasks SET completeddates = ($1) WHERE id = ($2)",
+                    [JSON.stringify(filteredCompletionRecords), taskid]
+                );
+            } else {
+                const todaysDate = new Date().toISOString().slice(0, 10);
+                const addedCompletionRecords = [...task.completeddates, { duedate, completiondate: todaysDate }];
+                const updateCompletionRecords = await pool.query(
+                    "UPDATE tasks SET completeddates = ($1) WHERE id = ($2)",
+                    [JSON.stringify(addedCompletionRecords), taskid]
+                );
+            };
+        };
+
+        res.status(200).json("Task completion updated.");
+    } catch(err) {
+        console.log(err.message);
+        res.status(400).json(err.message);
+    };
+};
+
+exports.update_task = async function(req, res, next) {
+
+};
+
+exports.delete_task = async function(req, res, next) {
+
 };

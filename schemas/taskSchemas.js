@@ -102,3 +102,20 @@ exports.addTaskSchema = {
         toBoolean: true,
     },
 };
+
+exports.updateTaskCompletionSchema = {
+    taskid: {
+        optional: false,
+        checkIsValidId: {
+            custom: isNanoIdLength,
+            errorMessage: "Task ID should be 21 characters long and randomly generated."
+        },
+    },
+    duedate: {
+        optional: true,
+        isISO8601: {
+            if: (value, { req }) => req.body.startdate,
+            errorMessage: "Must be formatted YYYY-MM-DD.",
+        },
+    },
+}

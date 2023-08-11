@@ -4,14 +4,14 @@ require("dotenv").config();
 const { Pool } = require("pg");
 const jwt = require("jsonwebtoken");
 const redis = require("redis");
-const { checkSchema, validationResult, matchedData } = require("express-validator");
+const { checkSchema, validationResult, matchedData, check } = require("express-validator");
 
 const { bedIdSchema } = require("../schemas/shared");
 const { findUsersSchema } = require("../schemas/userSchemas");
 const { createEditBedSchema, rolesSchema, membersSchema, gridmapSchema, seedbasketSchema, dateOfBedCreationSchema, copyBedSchema } = require ("../schemas/bedSchemas");
 const { updatePermissionsLogSchema } = require ("../schemas/permissionsSchema");
 const { vegSchema, returningWhatSchema, vegIdSchema, searchVegSchema } = require("../schemas/vegSchemas");
-const { addTaskSchema } = require("../schemas/taskSchemas");
+const { addTaskSchema, updateTaskCompletionSchema } = require("../schemas/taskSchemas");
 const { notificationIdSchema, updateNotificationSchema, addNotificationSchema } = require("../schemas/notificationSchema");
 const { addEventSchema, deleteEventSchema, deleteTagSchema } = require("../schemas/eventSchemas");
 const { postSchema, postIdSchema, updateSubscribersSchema, updateReactionsSchema } = require("../schemas/postSchemas");
@@ -135,9 +135,11 @@ async function determineUserPermissions(req, res, next) {
           userPermissions.push(permissionsArr[0].slice(0, -7));
         };
       });
+
+      res.locals.userRoleId = userRoleId;
     };
 
-    console.log(userPermissions);
+    console.log("permissions:", userPermissions);
     res.locals.userPermissions = userPermissions;
     next();
   } catch(err) {
@@ -213,6 +215,8 @@ router.delete("/delete-notification/:notifid", checkSchema(notificationIdSchema,
 router.get("/pull-tasks/:bedid", checkSchema(bedIdSchema, ["params"]), accessValidatorResults, determineUserPermissions, tasksController.pull_tasks);
 
 router.post("/add-task/:bedid", checkSchema(bedIdSchema, ["params"]), checkSchema(addTaskSchema, ["body"]), accessValidatorResults, determineUserPermissions, tasksController.add_task);
+
+router.patch("/update-task-completion/:bedid", checkSchema(bedIdSchema, ["params"]), checkSchema(updateTaskCompletionSchema, ["body"]), accessValidatorResults, determineUserPermissions, tasksController.update_task_completion);
 
 
 /// EVENT ENDPOINTS /// 
